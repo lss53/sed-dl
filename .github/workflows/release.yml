@@ -1,0 +1,173 @@
+# .github/workflows/release.yml
+
+name: Release CI
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release version tag (e.g., v1.2.5). Must start with "v".'
+        required: true
+      publish:
+        description: 'Publish as a full release (otherwise it stays a draft)'
+        type: boolean
+        default: true
+      generate_notes:
+        description: 'Auto-generate release notes'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ----------------------------------------------------------------
+  # Job 1: 并行构建所有平台的二进制文件
+  # ----------------------------------------------------------------
+  build:
+    name: Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            ext: .zip
+            strip_cmd: ""
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            ext: .tar.gz
+            strip_cmd: "strip"
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            ext: .tar.gz
+            strip_cmd: "strip"
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            ext: .tar.gz
+            strip_cmd: "strip"
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            ext: .tar.gz
+            strip_cmd: "aarch64-linux-gnu-strip"
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+            !target/**/release/deps
+            !target/**/release/build
+            !target/**/release/examples
+            !target/**/release/*.d
+            !target/**/release/${{ env.BINARY_NAME }}
+            !target/**/release/${{ env.BINARY_NAME }}.exe
+          key: ${{ runner.os }}-cargo-build-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-${{ matrix.target }}-
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tool (cross)
+        if: contains(matrix.target, 'unknown-linux-musl')
+        run: cargo install cross --force
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full musl-tools
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-musl" ]]; then
+            sudo apt-get install -y binutils-aarch64-linux-gnu
+          fi
+
+      - name: Set BINARY_NAME env var
+        shell: bash
+        run: |
+          BINARY_NAME=$(grep '^name =' Cargo.toml | head -1 | sed 's/name = "\(.*\)"/\1/' | tr '_' '-')
+          echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
+
+      - name: Build binary
+        shell: bash
+        run: |
+          BUILD_CMD="cargo"
+          if [[ "${{ matrix.target }}" == *"-musl"* ]]; then
+            BUILD_CMD="cross"
+          fi
+          $BUILD_CMD build --release --target ${{ matrix.target }} --locked
+      
+      - name: Prepare artifact
+        id: prepare
+        shell: bash
+        run: |
+          # Make the script executable
+          chmod +x .github/scripts/prepare-release-asset.sh
+          # Run the script and capture its output
+          ARCHIVE_NAME=$(.github/scripts/prepare-release-asset.sh)
+          # Set the output for the next step
+          echo "archive_name=$ARCHIVE_NAME" >> $GITHUB_OUTPUT
+        env:
+          TAG_NAME: ${{ github.event.inputs.tag || github.ref_name }}
+          TARGET: ${{ matrix.target }}
+          OS: ${{ matrix.os }}
+          EXT: ${{ matrix.ext }}
+          STRIP_CMD: ${{ matrix.strip_cmd }}
+
+      - name: Upload artifact for release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-asset-${{ matrix.target }}
+          path: ${{ steps.prepare.outputs.archive_name }}
+
+  # ----------------------------------------------------------------
+  # Job 2: 创建 Release 并上传所有构建产物
+  # ----------------------------------------------------------------
+  release:
+    name: Create Release
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          pattern: release-asset-*
+          merge-multiple: true
+
+      - name: Generate Checksums
+        run: |
+          cd release-artifacts
+          sha256sum * > checksums.txt
+          echo "Generated checksums.txt:"
+          cat checksums.txt
+          cd ..
+
+      - name: Create and Publish Release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "release-artifacts/*"
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+          draft: ${{ github.event.name == 'workflow_dispatch' && !github.event.inputs.publish }}
+          generateReleaseNotes: ${{ github.event.name == 'push' || github.event.inputs.generate_notes }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          allowUpdates: true
