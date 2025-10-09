@@ -1,5 +1,5 @@
 [package]
-name = "sed_dl"
+name = "sed-dl"
 version = "1.0.0"
 edition = "2024"
 authors = ["ds"]
@@ -11,38 +11,50 @@ keywords = ["downloader", "education", "cli", "smartedu"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
-reqwest-middleware = "0.2"
-reqwest-retry = "0.3"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-clap = { version = "4", features = ["derive", "cargo"] }
-url = "2"
-indicatif = "0.17"
+# 网络与异步核心
+tokio = { version = "1.37", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+reqwest-middleware = "0.4"
+reqwest-retry = "0.7"
+futures = "0.3"
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# 命令行与UI
+clap = { version = "4.5", features = ["derive", "cargo"] }
+indicatif = "0.18"
+colored = "3.0"
+rpassword = "7.4"
+
+# 数据处理与加密
+url = "2.5"
 m3u8-rs = "6.0.0"
-colored = "2"
-rpassword = "7"
 aes = "0.8"
 cbc = { version = "0.1", features = ["std"] }
 ecb = { version = "0.1", features = ["std"] }
 base64 = "0.22"
 md-5 = "0.10"
-futures = "0.3"
-anyhow = "1"
-thiserror = "1"
-regex = "1"
-tempfile = "3"
-chrono = { version = "0.4", features = ["serde"] }
-dirs = "5"
-dashmap = "5"
-heck = "0.5"
-tokio-util = { version = "0.7", features = ["io"] }
-percent-encoding = "2"
+regex = "1.10"
+percent-encoding = "2.3"
 hex = "0.4"
-once_cell = "1.19"
+heck = "0.5"
+dashmap = "6.0"
+
+# 错误处理
+anyhow = "1.0"
+thiserror = "2.0"
+
+# 系统与工具
+tempfile = "3.10"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "6.0"
+tokio-util = { version = "0.7", features = ["io"] }
 async-trait = "0.1"
-dunce = "1.0.4"
+dunce = "1.0.5"
+log = "0.4"
+fern = { version = "0.7", features = ["colored"] }
 
 [profile.release]
 lto = true
