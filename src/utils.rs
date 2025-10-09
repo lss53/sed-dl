@@ -1,7 +1,9 @@
 // src/utils.rs
 
 use crate::{constants, error::*};
-use once_cell::sync::Lazy;
+use anyhow::Context;
+use md5::{Digest, Md5};
+use std::sync::LazyLock;
 use regex::Regex;
 use std::{
     collections::BTreeSet,
@@ -10,13 +12,11 @@ use std::{
     io::{BufReader, Read},
     path::{Component, Path, PathBuf},
 };
-use md5::{Digest, Md5};
 
-pub static UUID_PATTERN: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-f0-9]{8}-([a-f0-9]{4}-){3}[a-f0-9]{12}$").unwrap());
-
-static ILLEGAL_CHARS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#"[\\/*?:"<>|]"#).unwrap());
-static WHITESPACE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
+pub static UUID_PATTERN:LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-f0-9]{8}-([a-f0-9]{4}-){3}[a-f0-9]{12}$").unwrap());
+static ILLEGAL_CHARS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"[\\/*?:"<>|]"#).unwrap());
+static WHITESPACE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
 
 pub fn is_resource_id(text: &str) -> bool {
     UUID_PATTERN.is_match(text)
@@ -24,9 +24,7 @@ pub fn is_resource_id(text: &str) -> bool {
 
 pub fn sanitize_filename(name: &str) -> String {
     let original_name = name.trim();
-    if original_name.is_empty() {
-        return "unknown".to_string();
-    }
+    if original_name.is_empty() { return "unknown".to_string(); }
 
     let stem = Path::new(original_name)
         .file_stem()
@@ -34,8 +32,8 @@ pub fn sanitize_filename(name: &str) -> String {
         .to_string_lossy()
         .to_uppercase();
     let windows_reserved = [
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
 
     let mut name = if windows_reserved.contains(&stem.as_ref()) {
@@ -46,22 +44,14 @@ pub fn sanitize_filename(name: &str) -> String {
 
     name = ILLEGAL_CHARS_RE.replace_all(&name, " ").into_owned();
     name = WHITESPACE_RE.replace_all(&name, " ").trim().to_string();
-    name = name
-        .trim_matches(|c: char| c == '.' || c.is_whitespace())
-        .to_string();
-
-    if name.is_empty() {
-        return "unnamed".to_string();
-    }
+    name = name.trim_matches(|c: char| c == '.' || c.is_whitespace()).to_string();
+    if name.is_empty() { return "unnamed".to_string(); }
 
     if name.as_bytes().len() > constants::MAX_FILENAME_BYTES {
-        if let (Some(stem_part), Some(ext)) =
-            (Path::new(&name).file_stem(), Path::new(&name).extension())
-        {
+        if let (Some(stem_part), Some(ext)) = (Path::new(&name).file_stem(), Path::new(&name).extension()) {
             let stem_part_str = stem_part.to_string_lossy();
             let ext_str = format!(".{}", ext.to_string_lossy());
-            let max_stem_bytes =
-                constants::MAX_FILENAME_BYTES.saturating_sub(ext_str.as_bytes().len());
+            let max_stem_bytes = constants::MAX_FILENAME_BYTES.saturating_sub(ext_str.as_bytes().len());
             let truncated_stem = safe_truncate_utf8(&stem_part_str, max_stem_bytes);
             name = format!("{}{}", truncated_stem, ext_str);
         } else {
@@ -72,13 +62,9 @@ pub fn sanitize_filename(name: &str) -> String {
 }
 
 fn safe_truncate_utf8(s: &str, max_bytes: usize) -> &str {
-    if s.len() <= max_bytes {
-        return s;
-    }
+    if s.len() <= max_bytes { return s; }
     let mut i = max_bytes;
-    while i > 0 && !s.is_char_boundary(i) {
-        i -= 1;
-    }
+    while i > 0 && !s.is_char_boundary(i) { i -= 1; }
     &s[..i]
 }
 
@@ -92,40 +78,24 @@ pub fn truncate_text(text: &str, max_width: usize) -> String {
             break;
         }
     }
-    if end_pos == 0 {
-        text.to_string()
-    } else {
-        format!("{}...", &text[..end_pos])
-    }
+    if end_pos == 0 { text.to_string() } else { format!("{}...", &text[..end_pos]) }
 }
 
 pub fn parse_selection_indices(selection_str: &str, total_items: usize) -> Vec<usize> {
-    if selection_str.to_lowercase() == "all" {
-        return (0..total_items).collect();
-    }
+    if selection_str.to_lowercase() == "all" { return (0..total_items).collect(); }
     let mut indices = BTreeSet::new();
     for part in selection_str.split(',').map(|s| s.trim()) {
-        if part.is_empty() {
-            continue;
-        }
+        if part.is_empty() { continue; }
         if let Some(range_part) = part.split_once('-') {
-            if let (Ok(start), Ok(end)) =
-                (range_part.0.parse::<usize>(), range_part.1.parse::<usize>())
-            {
-                if start == 0 || end == 0 {
-                    continue;
-                }
+            if let (Ok(start), Ok(end)) = (range_part.0.parse::<usize>(), range_part.1.parse::<usize>()) {
+                if start == 0 || end == 0 { continue; }
                 let (min, max) = (start.min(end), start.max(end));
                 for i in min..=max {
-                    if i > 0 && i <= total_items {
-                        indices.insert(i - 1);
-                    }
+                    if i > 0 && i <= total_items { indices.insert(i - 1); }
                 }
             }
         } else if let Ok(num) = part.parse::<usize>() {
-            if num > 0 && num <= total_items {
-                indices.insert(num - 1);
-            }
+            if num > 0 && num <= total_items { indices.insert(num - 1); }
         }
     }
     indices.into_iter().collect()
@@ -136,41 +106,27 @@ pub fn calculate_file_md5(path: &Path) -> AppResult<String> {
     let mut reader = BufReader::new(file);
     let mut hasher = Md5::new();
     let mut buffer = [0; 8192];
-
     loop {
         let bytes_read = reader.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
-        }
+        if bytes_read == 0 { break; }
         hasher.update(&buffer[..bytes_read]);
     }
-    
     let result = hasher.finalize();
     Ok(format!("{:x}", result))
 }
 
 pub fn secure_join_path(base_dir: &Path, relative_path: &Path) -> AppResult<PathBuf> {
-    use anyhow::Context;
-    let resolved_base = dunce::canonicalize(base_dir)
-        .with_context(|| format!("基础目录 '{:?}' 不存在或无法访问", base_dir))?;
-
+    let resolved_base = dunce::canonicalize(base_dir).with_context(|| format!("基础目录 '{:?}' 不存在或无法访问", base_dir))?;
     let mut final_path = resolved_base.clone();
     for component in relative_path.components() {
         match component {
             Component::Normal(part) => final_path.push(part),
-            Component::ParentDir => {
-                return Err(AppError::Security("检测到路径遍历 '..' ".to_string()));
-            }
+            Component::ParentDir => return Err(AppError::Security("检测到路径遍历 '..' ".to_string())),
             _ => continue,
         }
     }
-
     if !final_path.starts_with(&resolved_base) {
-        return Err(AppError::Security(format!(
-            "路径遍历攻击检测: '{:?}'",
-            relative_path
-        )));
+        return Err(AppError::Security(format!("路径遍历攻击检测: '{:?}'", relative_path)));
     }
-
     Ok(final_path)
 }
