@@ -9,6 +9,9 @@
     <a href="https://github.com/lss53/sed-dl/releases/latest">
         <img src="https://img.shields.io/github/v/release/lss53/sed-dl" alt="最新版本">
     </a>
+    <a href="https://github.com/lss53/sed-dl/releases/latest">
+        <img src="https://img.shields.io/github/downloads/lss53/sed-dl/total" alt="下载次数">
+    </a>
     <a href="https://opensource.org/licenses/MIT">
         <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="许可证: MIT">
     </a>
@@ -30,7 +33,7 @@
     -   🔄 **断点续传**：网络异常中断后，可自动恢复下载进度。
     -   ✅ **完整性校验**：通过 MD5 和文件大小校验，确保下载内容完整无误。
 -   **视频专项优化**：
-    -   🎬 **M3U8 支持**：自动解析并合并加密视频流，输出为完整 `.ts` 文件。
+    -   🎬 **M3U8 支持**：自动解析并合并加密视频流，输出为可在主流播放器中直接播放的完整 `.ts` 视频文件。
     -   📺 **多清晰度**：支持选择 1080p、720p 等不同画质。
 -   **使用便捷**：
     -   🌳 **自动归类**：按学科、年级、版本等自动生成清晰的文件目录。
@@ -49,6 +52,8 @@
 访问 [GitHub Releases](https://github.com/lss53/sed-dl/releases) 页面，下载对应系统的可执行文件，解压后即可使用，无需配置额外环境。
 
 ### 方式二：从源码构建
+
+如果您未安装 Rust 环境，请先访问 [rustup.rs](https://rustup.rs/) 安装 Rust 工具链。
 
 ```bash
 # 克隆项目
@@ -81,7 +86,7 @@ cargo build --release
 > ```javascript
 > copy(JSON.parse(JSON.parse(localStorage.getItem(Object.keys(localStorage).find(i => i.startsWith("ND_UC_AUTH")))).value).access_token)
 > ```
-> **5. Token 将自动复制到剪贴板**，粘贴到工具中即可。程序会自动保存 Token，后续使用无需重复输入。
+> **5. Token 将自动复制到剪贴板**，粘贴到工具中即可。程序会优先使用命令行传入的 `--token` 参数，其次是环境变量，最后才是自动保存的 Token。首次使用后，程序会自动保存 Token，后续无需重复输入。
 
 #### 手动获取（备选）：
 
