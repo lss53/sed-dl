@@ -109,10 +109,10 @@ sed-dl -i
 
 ```bash
 # 下载同步课堂的视频与课件
-sed-dl --url "https://www.zxx.edu.cn/syncClassroom/classActivity?activityId=******"
+sed-dl --url "https://.../classActivity?activityId=******"
 
 # 下载电子教材及音频
-sed-dl --url "https://www.zxx.edu.cn/tchMaterial?contentId=******"
+sed-dl --url "https://.../tchMaterial?contentId=******"
 ```
 
 #### 批量下载
