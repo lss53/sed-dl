@@ -1,10 +1,13 @@
 // src/downloader/m3u8.rs
-use super::{DownloadStatus, FileInfo};
-use crate::{client::RobustClient, error::*, DownloadJobContext};
+
+use super::DownloadStatus;
+use crate::{client::RobustClient, error::*, models::FileInfo, DownloadJobContext};
 use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyInit, KeyIvInit};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use futures::{stream, StreamExt};
+use log::{debug, error, info, trace, warn};
 use md5::{Digest, Md5};
+use serde_json::Value;
 use std::{
     fs::{self, File},
     io::{self, BufWriter, Write},
@@ -13,6 +16,8 @@ use std::{
     time::Duration,
 };
 use url::Url;
+
+pub(super) type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
 pub(super) struct M3u8Downloader {
     context: DownloadJobContext,
@@ -24,18 +29,21 @@ impl M3u8Downloader {
     }
 
     pub(super) async fn download(&self, item: &FileInfo) -> AppResult<DownloadStatus> {
+        info!("开始下载 M3U8 视频: {}", item.filepath.display());
         let mut url = Url::parse(&item.url)?;
         let token = self.context.token.lock().await;
         if !token.is_empty() {
             url.query_pairs_mut().append_pair("accessToken", &token);
         }
-        drop(token); // 释放锁
+        drop(token);
 
         let (key, iv, playlist) = self.get_m3u8_key_and_playlist(url.clone()).await?;
 
         if playlist.segments.is_empty() {
+            error!("M3U8文件 '{}' 不含分片", item.url);
             return Err(AppError::M3u8Parse("M3U8文件不含分片".to_string()));
         }
+        info!("M3U8 包含 {} 个分片。 解密密钥: {}, IV: {}", playlist.segments.len(), if key.is_some() { "有" } else { "无" }, iv.as_deref().unwrap_or("无"));
         let segment_urls: Vec<String> = playlist.segments.iter().map(|s| s.uri.clone()).collect();
 
         let decryptor = if let (Some(key), Some(iv_hex)) = (key, iv) {
@@ -50,11 +58,14 @@ impl M3u8Downloader {
         };
 
         let temp_dir = tempfile::Builder::new().prefix("m3u8_dl_").tempdir()?;
+        debug!("为M3U8下载创建临时目录: {:?}", temp_dir.path());
 
         self.download_segments_with_retry(&url, &segment_urls, temp_dir.path(), decryptor)
             .await?;
 
+        info!("所有分片下载完成，开始合并...");
         self.merge_ts_segments(temp_dir.path(), segment_urls.len(), &item.filepath)?;
+        info!("分片合并完成 -> {}", item.filepath.display());
         Ok(DownloadStatus::Success)
     }
 
@@ -66,37 +77,51 @@ impl M3u8Downloader {
         decryptor: Option<Aes128CbcDec>,
     ) -> AppResult<()> {
         let mut failed_indices: Vec<usize> = (0..urls.len()).collect();
-
         for attempt in 0..=self.context.config.max_retries {
-            if failed_indices.is_empty() {
-                break;
-            }
+            if failed_indices.is_empty() { break; }
             if attempt > 0 {
+                warn!("第 {} 次重试下载 {} 个失败的分片...", attempt, failed_indices.len());
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
-
             let stream = stream::iter(failed_indices.clone())
                 .map(|i| {
-                    let url = base_url.join(&urls[i]).unwrap();
+                    let url_res = base_url.join(&urls[i]);
                     let ts_path = temp_path.join(format!("{:05}.ts", i));
                     let client = self.context.http_client.clone();
                     let decryptor = decryptor.clone();
                     tokio::spawn(async move {
-                        Self::download_ts_segment(client, url, &ts_path, decryptor)
-                            .await
-                            .map_err(|_| i)
+                        let url = match url_res {
+                            Ok(url) => url,
+                            Err(e) => return (i, Err(AppError::from(e))),
+                        };
+                        match Self::download_ts_segment(client, url, &ts_path, decryptor).await {
+                            Ok(_) => (i, Ok(())),
+                            Err(e) => {
+                                trace!("分片 #{} 下载失败: {}", i, e);
+                                (i, Err(e))
+                            }
+                        }
                     })
                 })
                 .buffer_unordered(self.context.config.max_workers * 2);
-
             let results: Vec<_> = stream.collect().await;
             failed_indices = results
                 .into_iter()
-                .filter_map(|res| res.unwrap().err())
+                .filter_map(|handle_res| {
+                    match handle_res {
+                        Ok((_index, Ok(_))) => None, 
+                        Ok((index, Err(_))) => Some(index),
+                        Err(_) => {
+                            error!("一个下载任务 panic 或被取消");
+                            None
+                        }
+                    }
+                })
                 .collect();
         }
 
         if !failed_indices.is_empty() {
+            error!("{} 个分片最终下载失败", failed_indices.len());
             return Err(AppError::Merge(format!(
                 "{} 个分片最终下载失败",
                 failed_indices.len()
@@ -122,21 +147,13 @@ impl M3u8Downloader {
         Ok(())
     }
 
-    fn merge_ts_segments(
-        &self,
-        temp_dir: &Path,
-        num_segments: usize,
-        output_path: &Path,
-    ) -> AppResult<()> {
+    fn merge_ts_segments(&self, temp_dir: &Path, num_segments: usize, output_path: &Path) -> AppResult<()> {
         let temp_output_path = output_path.with_extension("tmp");
         let mut writer = BufWriter::new(File::create(&temp_output_path)?);
         for i in 0..num_segments {
             let ts_path = temp_dir.join(format!("{:05}.ts", i));
             if !ts_path.exists() {
-                return Err(AppError::Merge(format!(
-                    "丢失视频分片: {:?}",
-                    ts_path.file_name().unwrap()
-                )));
+                return Err(AppError::Merge(format!("丢失视频分片: {:?}", ts_path.file_name().unwrap())));
             }
             let mut reader = File::open(ts_path)?;
             io::copy(&mut reader, &mut writer)?;
@@ -146,87 +163,49 @@ impl M3u8Downloader {
         Ok(())
     }
 
-    async fn get_m3u8_key_and_playlist(
-        &self,
-        m3u8_url: Url,
-    ) -> AppResult<(Option<Vec<u8>>, Option<String>, m3u8_rs::MediaPlaylist)> {
-        let playlist_text = self
-            .context
-            .http_client
-            .get(m3u8_url.clone())
-            .await?
-            .text()
-            .await?;
-        let playlist = m3u8_rs::parse_playlist_res(playlist_text.as_bytes())
-            .map_err(|e| AppError::M3u8Parse(e.to_string()))?;
+    async fn get_m3u8_key_and_playlist(&self, m3u8_url: Url) -> AppResult<(Option<Vec<u8>>, Option<String>, m3u8_rs::MediaPlaylist)> {
+        debug!("获取并解析 M3U8 文件: {}", m3u8_url);
+        let playlist_text = self.context.http_client.get(m3u8_url.clone()).await?.text().await?;
+        trace!("M3U8 内容: {}", playlist_text);
+        let playlist = m3u8_rs::parse_playlist_res(playlist_text.as_bytes()).map_err(|e| AppError::M3u8Parse(e.to_string()))?;
 
-        if let m3u8_rs::Playlist::MediaPlaylist(media) = playlist {
-            let key_info = media.segments.iter().find_map(|seg| {
-                seg.key.as_ref().and_then(|k| {
-                    if let m3u8_rs::Key {
-                        uri: Some(uri),
-                        iv,
-                        ..
-                    } = k
-                    {
-                        Some((uri.clone(), iv.clone()))
-                    } else {
-                        None
-                    }
-                })
-            });
+        let m3u8_rs::Playlist::MediaPlaylist(media) = playlist else {
+            return Err(AppError::M3u8Parse("预期的M3U8文件不是媒体播放列表".to_string()));
+        };
 
-            if let Some((uri, iv)) = key_info {
-                use serde_json::Value;
-                let key_url = m3u8_url.join(&uri)?;
-                let nonce_url = format!("{}/signs", key_url);
-                let signs_data: Value = self.context.http_client.get(&nonce_url).await?.json().await?;
-                let nonce = signs_data
-                    .get("nonce")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| AppError::M3u8Parse("密钥服务器响应中未找到 'nonce'".to_string()))?;
-
-                let key_filename = key_url
-                    .path_segments()
-                    .and_then(|segments| segments.last())
-                    .ok_or_else(|| {
-                        AppError::M3u8Parse(format!("无法从密钥URL中提取文件名: {}", key_url))
-                    })?;
-
-                let sign_material = format!("{}{}", nonce, key_filename);
-                let mut hasher = Md5::new();
-                hasher.update(sign_material.as_bytes());
-                let result = hasher.finalize();
-                let sign = &format!("{:x}", result)[..16];
-
-                let final_key_url = format!("{}?nonce={}&sign={}", key_url, nonce, sign);
-                let key_data: Value = self
-                    .context
-                    .http_client
-                    .get(&final_key_url)
-                    .await?
-                    .json()
-                    .await?;
-                let encrypted_key_b64 = key_data
-                    .get("key")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        AppError::M3u8Parse("密钥服务器响应中未找到加密密钥 'key'".to_string())
-                    })?;
-
-                let encrypted_key = BASE64.decode(encrypted_key_b64)?;
-                type EcbDec = ecb::Decryptor<aes::Aes128>;
-                let cipher = EcbDec::new(sign.as_bytes().into());
-                let decrypted_key = cipher
-                    .decrypt_padded_vec_mut::<Pkcs7>(&encrypted_key)
-                    .map_err(|e| AppError::Security(format!("AES密钥解密失败: {}", e)))?;
-
-                return Ok((Some(decrypted_key), iv, media));
-            }
+        let Some((uri, iv)) = media.segments.iter().find_map(|seg| seg.key.as_ref().and_then(|k|
+            if let m3u8_rs::Key { uri: Some(uri), iv, .. } = k { Some((uri.clone(), iv.clone())) } else { None }
+        )) else {
+            debug!("M3U8 未加密");
             return Ok((None, None, media));
-        }
-        Err(AppError::M3u8Parse(
-            "预期的M3U8文件不是媒体播放列表".to_string(),
-        ))
+        };
+
+        debug!("在M3U8中找到加密信息. Key URI: {}, IV: {:?}", uri, iv);
+        let key_url = m3u8_url.join(&uri)?;
+        let nonce_url = format!("{}/signs", key_url);
+        debug!("获取 nonce from: {}", nonce_url);
+        let signs_data: Value = self.context.http_client.get(&nonce_url).await?.json().await?;
+        let nonce = signs_data.get("nonce").and_then(Value::as_str).ok_or_else(|| AppError::M3u8Parse("密钥服务器响应中未找到 'nonce'".to_string()))?;
+        trace!("获取到 nonce: {}", nonce);
+
+        let key_filename = key_url.path_segments().and_then(|s| s.last()).ok_or_else(|| AppError::M3u8Parse(format!("无法从密钥URL中提取文件名: {}", key_url)))?;
+        let sign_material = format!("{}{}", nonce, key_filename);
+        let mut hasher = Md5::new();
+        hasher.update(sign_material.as_bytes());
+        let result = hasher.finalize();
+        let sign = &format!("{:x}", result)[..16];
+        debug!("计算得到 sign: {}", sign);
+
+        let final_key_url = format!("{}?nonce={}&sign={}", key_url, nonce, sign);
+        debug!("获取最终密钥 from: {}", final_key_url);
+        let key_data: Value = self.context.http_client.get(&final_key_url).await?.json().await?;
+        let encrypted_key_b64 = key_data.get("key").and_then(Value::as_str).ok_or_else(|| AppError::M3u8Parse("密钥服务器响应中未找到加密密钥 'key'".to_string()))?;
+
+        let encrypted_key = BASE64.decode(encrypted_key_b64)?;
+        type EcbDec = ecb::Decryptor<aes::Aes128>;
+        let cipher = EcbDec::new(sign.as_bytes().into());
+        let decrypted_key = cipher.decrypt_padded_vec_mut::<Pkcs7>(&encrypted_key).map_err(|e| AppError::Security(format!("AES密钥解密失败: {}", e)))?;
+        debug!("密钥解密成功");
+        Ok((Some(decrypted_key), iv, media))
     }
 }

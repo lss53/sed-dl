@@ -1,6 +1,6 @@
 // src/ui.rs
 
-use crate::constants;
+use crate::{constants, symbols};
 use colored::*;
 use std::io::{self, Write};
 
@@ -46,20 +46,14 @@ pub fn confirm(question: &str, default_yes: bool) -> bool {
     let options = if default_yes { "(Y/n)" } else { "(y/N)" };
     loop {
         match prompt(
-            &format!("{} {} (按 {} 取消)", question, options, "Ctrl+C".yellow()),
+            &format!("{} {} (按 {} 取消)", question, options, *symbols::CTRL_C),
             None,
         ) {
             Ok(choice) => {
                 let choice = choice.to_lowercase();
-                if choice == "y" {
-                    return true;
-                }
-                if choice == "n" {
-                    return false;
-                }
-                if choice.is_empty() {
-                    return default_yes;
-                }
+                if choice == "y" { return true; }
+                if choice == "n" { return false; }
+                if choice.is_empty() { return default_yes; }
                 println!("{}", "无效输入，请输入 'y' 或 'n'。".red());
             }
             Err(_) => return false,
@@ -87,7 +81,7 @@ pub fn selection_menu(
     }
 
     println!("├{}┤", "─".repeat(constants::UI_WIDTH - 2));
-    println!("  {} (按 {} 可取消)", instructions, "Ctrl+C".yellow());
+    println!("  {} (按 {} 可取消)", instructions, *symbols::CTRL_C);
     println!("└{}┘", "─".repeat(constants::UI_WIDTH - 2));
 
     prompt("请输入你的选择", Some(default_choice)).unwrap_or_default()
@@ -97,4 +91,24 @@ pub fn prompt_hidden(message: &str) -> io::Result<String> {
     print!("\n>>> {}: ", message);
     io::stdout().flush()?;
     rpassword::read_password()
+}
+
+pub fn get_user_choices_from_menu(
+    options: &[String],
+    title: &str,
+    default_choice: &str,
+) -> Vec<String> {
+    if options.is_empty() {
+        return vec![];
+    }
+    let user_input = selection_menu(
+        options,
+        title,
+        "支持格式: 1, 3, 2-4, all",
+        default_choice,
+    );
+    crate::utils::parse_selection_indices(&user_input, options.len())
+        .into_iter()
+        .map(|i| options[i].clone())
+        .collect()
 }

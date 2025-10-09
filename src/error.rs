@@ -1,5 +1,5 @@
 // src/error.rs
-use anyhow;
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -33,4 +33,3 @@ pub enum AppError {
 }
 
 pub type AppResult<T> = Result<T, AppError>;
-pub type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
