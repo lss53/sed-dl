@@ -6,7 +6,6 @@ use crate::{
     error::{AppError, AppResult},
 };
 use anyhow::{anyhow, Context};
-use colored::Colorize;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, fs, path::PathBuf, time::Duration};
@@ -141,11 +140,11 @@ pub fn save_token(token: &str) -> AppResult<()> {
     fs::write(&config_path, json_content)
         .with_context(|| format!("保存Token到 '{}' 失败", config_path.display()))?;
 
-    info!("Token已成功保存至: {:?}", config_path);
+    info!("用户已将 Token 保存至配置文件: {}", config_path.display());
     println!(
-        "{} {}",
-        "[i]".cyan(),
-        format!("Token已成功保存至: {:?}", config_path)
+        "{} Token已成功保存至: {}",
+        *crate::symbols::INFO,
+        config_path.display()
     );
 
     Ok(())

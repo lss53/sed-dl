@@ -83,16 +83,15 @@ async fn main() {
         colored::control::set_virtual_terminal(true).ok();
     }
 
-    let bin_name = env::var("CARGO_BIN_NAME").unwrap_or_else(|_| "sed-dl".to_string());
-    
-    let after_help = format!(
-        "示例:\n  # 启动交互模式 (推荐)\n  {bin} -i\n\n  # 自动下载单个链接中的所有内容\n  {bin} --url \"https://...\"\n\n  # 批量下载并显示调试信息 (日志写入文件)\n  {bin} -b my_links.txt --type tchMaterial --log-level debug\n\n  # 获取 Token 帮助\n  {bin} --token-help",
-        bin = bin_name
-    );
+// 直接在 format! 宏中使用 clap::crate_name!()
+let after_help = format!(
+    "示例:\n  # 启动交互模式 (推荐)\n  {bin} -i\n\n  # 自动下载单个链接中的所有内容\n  {bin} --url \"https://...\"\n\n  # 批量下载并显示调试信息 (日志写入文件)\n  {bin} -b my_links.txt --type tchMaterial --log-level debug\n\n  # 获取 Token 帮助\n  {bin} --token-help",
+    bin = clap::crate_name!()
+);
 
-    let cmd = Cli::command()
-        .override_usage(format!("{} <MODE> [OPTIONS]", bin_name))
-        .after_help(after_help);
+let cmd = Cli::command()
+    .override_usage(format!("{} <MODE> [OPTIONS]", clap::crate_name!()))
+    .after_help(after_help);
     
     let matches = cmd.get_matches();
     let args = Arc::new(Cli::from_arg_matches(&matches).unwrap());

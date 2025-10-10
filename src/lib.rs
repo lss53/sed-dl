@@ -153,7 +153,6 @@ async fn process_batch_tasks(batch_file: &Path, base_context: DownloadJobContext
     let content = std::fs::read_to_string(batch_file)
         .map_err(|e| {
             log::error!("读取批量文件 '{}' 失败: {}", batch_file.display(), e);
-            eprintln!("{} 读取批量文件 '{}' 失败: {}", *symbols::ERROR, batch_file.display(), e);
             AppError::from(e)
         })?;
 

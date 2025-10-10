@@ -3,7 +3,7 @@
 pub const UI_WIDTH: usize = 88;
 pub const FILENAME_TRUNCATE_LENGTH: usize = 65;
 pub const MAX_FILENAME_BYTES: usize = 200;
-pub const CONFIG_DIR_NAME: &str = ".sed-dl";
+pub const CONFIG_DIR_NAME: &str = concat!(".", clap::crate_name!());
 pub const CONFIG_FILE_NAME: &str = "config.json";
 pub const DEFAULT_SAVE_DIR: &str = "downloads";
 pub const UNCLASSIFIED_DIR: &str = "未分类资源";

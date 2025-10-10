@@ -395,7 +395,8 @@ impl ResourceDownloader {
                             } else {
                                 format!("{} {}", symbol, task_name)
                             };
-                            m_progress.println(msg).unwrap();
+                            // 忽略打印结果，即使失败也不影响程序核心逻辑
+                            let _ = m_progress.println(msg);
                         }
                     }
                     Err(e @ AppError::TokenInvalid) => {
