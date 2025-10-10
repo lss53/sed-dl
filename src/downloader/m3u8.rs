@@ -153,7 +153,10 @@ impl M3u8Downloader {
         for i in 0..num_segments {
             let ts_path = temp_dir.join(format!("{:05}.ts", i));
             if !ts_path.exists() {
-                return Err(AppError::Merge(format!("丢失视频分片: {:?}", ts_path.file_name().unwrap())));
+                let filename = ts_path.file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "未知分片".to_string());
+                return Err(AppError::Merge(format!("丢失视频分片: {}", filename)));
             }
             let mut reader = File::open(ts_path)?;
             io::copy(&mut reader, &mut writer)?;
