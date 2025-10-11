@@ -7,13 +7,12 @@ use serde_json::Value;
 use std::{
     path::PathBuf,
     sync::Arc,
-    time::{Duration, SystemTime},
 };
 
 pub struct ChapterTreeResolver {
     http_client: Arc<RobustClient>,
     config: Arc<AppConfig>,
-    cache: DashMap<String, (Value, SystemTime)>,
+    cache: DashMap<String, Value>,
 }
 
 impl ChapterTreeResolver {
@@ -23,10 +22,8 @@ impl ChapterTreeResolver {
 
     async fn get_tree_data(&self, tree_id: &str) -> AppResult<Value> {
         if let Some(entry) = self.cache.get(tree_id) {
-            if entry.1.elapsed().unwrap_or_default() < Duration::from_secs(3600) {
-                debug!("章节树缓存命中: {}", tree_id);
-                return Ok(entry.0.clone());
-            }
+            debug!("章节树缓存命中: {}", tree_id);
+            return Ok(entry.value().clone());
         }
         debug!("章节树缓存未命中，从网络获取: {}", tree_id);
         let url_template = self.config.url_templates.get("CHAPTER_TREE").unwrap();
@@ -35,8 +32,7 @@ impl ChapterTreeResolver {
             .fetch_json(url_template, &[("tree_id", tree_id)])
             .await?;
         
-        self.cache
-            .insert(tree_id.to_string(), (data.clone(), SystemTime::now()));
+        self.cache.insert(tree_id.to_string(), data.clone());
         Ok(data)
     }
 

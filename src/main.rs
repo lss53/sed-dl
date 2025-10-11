@@ -26,30 +26,49 @@ fn init_logger(level: LogLevel) {
         LogLevel::Trace => log::LevelFilter::Trace,
     };
 
+    let app_name = clap::crate_name!();
     let log_file_path = match dirs::home_dir() {
-        Some(home) => home.join(constants::CONFIG_DIR_NAME).join("app.log"),
+        Some(home) => home
+            .join(constants::CONFIG_DIR_NAME)
+            .join(constants::LOG_FILE_NAME),
         None => {
             eprintln!("警告: 无法获取用户主目录，日志将写入临时目录。");
-            env::temp_dir().join("sed-dl").join("app.log")
+            env::temp_dir()
+                .join(app_name) // 在临时目录下创建一个以程序名命名的子目录
+                .join(constants::LOG_FILE_NAME)
         }
     };
     
     if let Some(dir) = log_file_path.parent() {
         if let Err(e) = std::fs::create_dir_all(dir) {
             eprintln!("警告: 无法创建日志目录 {:?}: {}", dir, e);
-            return;
         }
     }
 
     let file_appender = match fern::log_file(&log_file_path) {
         Ok(file) => file,
         Err(e) => {
-            eprintln!("警告: 无法打开日志文件 {:?} : {}。将尝试使用备用日志文件。", log_file_path, e);
-            let fallback_path = std::env::temp_dir().join("sed-dl-fallback.log");
+            eprintln!(
+                "警告: 无法打开日志文件 {:?} : {}。将尝试使用备用日志文件。", 
+                log_file_path, e
+            );
+            
+            let fallback_path = std::env::temp_dir().join(format!(
+                "{}-{}",
+                app_name,
+                constants::LOG_FALLBACK_FILE_NAME
+            ));
+            
             match fern::log_file(&fallback_path) {
-                Ok(fb_file) => fb_file,
+                Ok(fb_file) => {
+                    warn!("日志将写入备用文件: {:?}", fallback_path); 
+                    fb_file
+                },
                 Err(e_fb) => {
-                    eprintln!("错误: 无法创建备用日志文件 {:?}: {}。日志将不会被记录到文件。", fallback_path, e_fb);
+                    eprintln!(
+                        "错误: 无法创建备用日志文件 {:?}: {}。日志将不会被记录到文件。", 
+                        fallback_path, e_fb
+                    );
                     return;
                 }
             }
