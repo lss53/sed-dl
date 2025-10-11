@@ -205,8 +205,8 @@ impl ResourceDownloader {
             println!("\n{} 未选择任何文件，任务结束。", *symbols::INFO);
             return Ok(true);
         }
-        let mut tasks_to_run: Vec<FileInfo> = indices.into_iter().map(|i| all_file_items[i].clone()).collect();
-        tasks_to_run.sort_by_key(|item| item.ti_size.unwrap_or(0));
+        let tasks_to_run: Vec<FileInfo> = indices.into_iter().map(|i| all_file_items[i].clone()).collect();
+        // tasks_to_run.sort_by_key(|item| item.ti_size.unwrap_or(0));
         debug!("最终确定了 {} 个下载任务。", tasks_to_run.len());
 
         let mut tasks_to_attempt = tasks_to_run.clone();
