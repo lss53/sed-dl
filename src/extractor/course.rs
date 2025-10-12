@@ -213,9 +213,19 @@ impl CourseExtractor {
             let base_name = format!("{} - {} [{}]", title, type_name, actual_quality);
             let filename = format!("{} - [{}].ts", base_name, teacher);
             
+            // 从 custom_properties 中解析出真实的视频总大小
+            let video_total_size = ti_item.custom_properties.as_ref()
+                .and_then(|props| props.requirements.as_ref())
+                .and_then(|reqs| reqs.iter().find(|r| r.name == "total_size"))
+                .and_then(|r| r.value.parse::<u64>().ok());
+            
+            // 在创建 FileInfo 时，使用解析出的 video_total_size
             Some(FileInfo {
-                filepath: base_dir.join(filename), url: url.clone(),
-                ti_md5: ti_item.ti_md5.clone(), ti_size: ti_item.ti_size, date: resource.update_time,
+                filepath: base_dir.join(filename),
+                url: url.clone(),
+                ti_md5: None, // 对于M3U8视频，API的MD5无效，设为None
+                ti_size: video_total_size,
+                date: resource.update_time,
             })
         }).collect()
     }

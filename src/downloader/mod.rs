@@ -14,19 +14,15 @@ use crate::{
 use anyhow::anyhow;
 use colored::*;
 use futures::{stream, StreamExt};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use log::{debug, error, info, trace, warn};
+use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
+use log::{debug, error, info, warn};
 use reqwest::{header, StatusCode};
 use std::{
     cmp::min,
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     fs::{self, File, OpenOptions},
-    io::Write,
-    path::Path,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
-    },
+    io::Write as IoWrite,
+    sync::{atomic::Ordering, Arc, Mutex},
     time::Duration,
 };
 use url::Url;
@@ -101,11 +97,11 @@ impl DownloadManager {
             ui::print_sub_header("下载详情报告");
             if !skipped.is_empty() {
                 println!("\n{} 跳过的文件 ({}个):", *symbols::INFO, stats.skipped);
-                print_grouped_report(&skipped);
+                print_grouped_report(&skipped, |s| s.cyan());
             }
             if !failed.is_empty() {
                 println!("\n{} 失败的文件 ({}个):", *symbols::ERROR, stats.failed);
-                print_grouped_report(&failed);
+                print_grouped_report(&failed, |s| s.red());
             }
         }
         ui::print_sub_header("任务总结");
@@ -120,13 +116,13 @@ impl DownloadManager {
             println!("{}", summary);
         }
 
-        fn print_grouped_report(items: &[(String, String)]) {
+        fn print_grouped_report(items: &[(String, String)], color_fn: fn(ColoredString) -> ColoredString) {
             let mut grouped: HashMap<&String, Vec<&String>> = HashMap::new();
             for (filename, reason) in items { grouped.entry(reason).or_default().push(filename); }
             let mut sorted_reasons: Vec<_> = grouped.keys().collect();
             sorted_reasons.sort();
             for reason in sorted_reasons {
-                println!("  - 原因: {}", reason);
+                println!("  - {}", color_fn(format!("原因: {}", reason).into()));
                 let mut filenames = grouped.get(reason).unwrap().clone();
                 filenames.sort();
                 for filename in filenames { println!("    - {}", filename); }
@@ -154,19 +150,24 @@ pub fn get_status_display_info(status: DownloadStatus) -> (&'static ColoredStrin
     }
 }
 
+
+#[derive(Debug, PartialEq, Eq)]
+enum ValidationStatus {
+    Valid,
+    Invalid(String),
+    CanResume(u64),
+    NoInfoToValidate,
+}
+
 pub struct ResourceDownloader {
     context: DownloadJobContext,
-    m_progress: MultiProgress,
 }
 
 impl ResourceDownloader {
     pub fn new(context: DownloadJobContext) -> Self {
-        Self {
-            context,
-            m_progress: MultiProgress::new(),
-        }
+        Self { context }
     }
-
+    
     pub async fn run(&self, url: &str) -> AppResult<bool> {
         info!("开始处理 URL: {}", url);
         let (extractor, resource_id) = self.get_extractor_info(url)?;
@@ -205,8 +206,8 @@ impl ResourceDownloader {
             println!("\n{} 未选择任何文件，任务结束。", *symbols::INFO);
             return Ok(true);
         }
+        
         let tasks_to_run: Vec<FileInfo> = indices.into_iter().map(|i| all_file_items[i].clone()).collect();
-        // tasks_to_run.sort_by_key(|item| item.ti_size.unwrap_or(0));
         debug!("最终确定了 {} 个下载任务。", tasks_to_run.len());
 
         let mut tasks_to_attempt = tasks_to_run.clone();
@@ -345,75 +346,108 @@ impl ResourceDownloader {
     async fn execute_download_tasks(&self, tasks: &[FileInfo]) -> AppResult<()> {
         let max_workers = min(self.context.config.max_workers, tasks.len());
         if max_workers == 0 { return Ok(()); }
-        println!("\n{} 开始下载 {} 个文件 (并发数: {})...", *symbols::INFO, tasks.len(), max_workers);
 
-        let task_id_counter = Arc::new(AtomicU64::new(0));
-        let active_tasks = Arc::new(Mutex::new(BTreeMap::<u64, String>::new()));
-        let main_pbar_style = ProgressStyle::with_template("{prefix:7.bold.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos:>3}/{len:3} ({percent:>3}%) [ETA: {eta}]").expect("进度条模板无效").progress_chars("#>-");
-        let main_pbar = self.m_progress.add(ProgressBar::new(tasks.len() as u64));
-        main_pbar.set_style(main_pbar_style.clone());
-        main_pbar.set_prefix("总进度");
+        // 将这里的 all_sizes_available 强制设为 false 来测试回退样式
+        // let all_sizes_available = false; 
+        let all_sizes_available = tasks.iter().all(|t| t.ti_size.is_some() && t.ti_size.unwrap() > 0);
+        let tasks_count = tasks.len() as u64;
+        
+        let main_pbar: ProgressBar;
+        
+        if all_sizes_available {
+            let total_size: u64 = tasks.iter().map(|t| t.ti_size.unwrap_or(0)).sum();
+            println!("\n{} 开始下载 {} 个文件 (总大小: {}) (并发数: {})...", 
+                *symbols::INFO, tasks.len(), HumanBytes(total_size), max_workers);
+            
+            main_pbar = ProgressBar::new(total_size);
+            let pbar_style = ProgressStyle::with_template(
+                "[{elapsed_precise}] [{bar:40.green/white.dim}] {percent:>3}% |{bytes_per_sec:^12}|{bytes:>11}/{total_bytes:<11}| ETA: {eta_precise}"
+            )
+            .unwrap()
+            .progress_chars("##-");
+            main_pbar.set_style(pbar_style);
+        } else {
+            println!("\n{} 部分文件大小未知，将按文件数量显示进度。", *symbols::WARN);
+            println!("{} 开始下载 {} 个文件 (并发数: {})...", *symbols::INFO, tasks.len(), max_workers);
+
+            main_pbar = ProgressBar::new(tasks_count);
+            let pbar_style = ProgressStyle::with_template(
+                "[{elapsed_precise}] [{bar:40.yellow/white.dim}] {pos}/{len} ({percent}%) [ETA: {eta}]"
+            ).unwrap().progress_chars("#>-");
+            main_pbar.set_style(pbar_style);
+        }
+
         main_pbar.enable_steady_tick(Duration::from_millis(100));
-
+        
         let error_sender = Arc::new(tokio::sync::Mutex::new(None::<AppError>));
         let tasks_stream = stream::iter(tasks.to_owned());
-        let update_msg = |pbar: &ProgressBar, tasks: &Mutex<BTreeMap<u64, String>>| {
-            let guard = tasks.lock().unwrap();
-            pbar.set_message(guard.values().cloned().collect::<Vec<String>>().join(", "));
-        };
-        update_msg(&main_pbar, &active_tasks);
 
         tasks_stream.for_each_concurrent(max_workers, |task| {
             let context = self.context.clone();
             let main_pbar = main_pbar.clone();
-            let m_progress = self.m_progress.clone();
             let error_sender = error_sender.clone();
-            let task_id_counter = task_id_counter.clone();
-            let active_tasks = active_tasks.clone();
+
             async move {
                 if context.cancellation_token.load(Ordering::Relaxed) { return; }
-                if error_sender.lock().await.is_some() {
-                    trace!("检测到全局错误，提前中止新任务的启动。");
-                    return;
-                }
-                let task_id = task_id_counter.fetch_add(1, Ordering::Relaxed);
-                let task_name = task.filepath.file_name().unwrap().to_string_lossy().to_string();
-                active_tasks.lock().unwrap().insert(task_id, utils::truncate_text(&task_name, 30));
-                update_msg(&main_pbar, &active_tasks);
+                if error_sender.lock().await.is_some() { return; }
 
-                match Self::process_single_task(task.clone(), context.clone()).await {
+                let result = Self::process_single_task(
+                    task.clone(), context.clone(), main_pbar.clone(), all_sizes_available
+                ).await;
+
+                match result {
                     Ok(result) => {
                         match result.status {
                             DownloadStatus::Success | DownloadStatus::Resumed => context.manager.record_success(),
                             DownloadStatus::Skipped => context.manager.record_skip(&result.filename, result.message.as_deref().unwrap_or("文件已存在")),
                             _ => context.manager.record_failure(&result.filename, result.status),
                         }
+                        
+                        match result.status {
+                            DownloadStatus::Skipped => {
+                                if all_sizes_available {
+                                    if let Some(skipped_size) = task.ti_size { main_pbar.inc(skipped_size); }
+                                } else {
+                                    main_pbar.inc(1);
+                                }
+                            }
+                            _ => {
+                                if !all_sizes_available {
+                                    main_pbar.inc(1);
+                                }
+                            }
+                        }
+                        
                         if result.status != DownloadStatus::Skipped {
-                            let (symbol, _, default_msg) = get_status_display_info(result.status);
-                            let msg = if let Some(err_msg) = result.message {
-                                format!("\n{} 任务 '{}' 失败: {} (详情: {})", symbol, task_name, default_msg, err_msg)
-                            } else {
-                                format!("{} {}", symbol, task_name)
-                            };
-                            // 忽略打印结果，即使失败也不影响程序核心逻辑
-                            let _ = m_progress.println(msg);
+                             let (symbol, color_fn, default_msg) = get_status_display_info(result.status);
+                             let task_name = task.filepath.file_name().unwrap().to_string_lossy();
+                             let msg = if let Some(err_msg) = result.message {
+                                 let error_details = format!("失败: {} (详情: {})", default_msg, err_msg);
+                                 format!("\n{} {} {}", symbol, task_name, color_fn(error_details.into()))
+                             } else {
+                                 format!("{} {}", symbol, task_name)
+                             };
+                             main_pbar.println(msg);
                         }
                     }
                     Err(e @ AppError::TokenInvalid) => {
                         let mut error_lock = error_sender.lock().await;
                         if error_lock.is_none() {
+                            let task_name = task.filepath.to_string_lossy();
                             error!("任务 '{}' 因 Token 失效失败，将中止整个批次。", task_name);
-                            context.manager.record_failure(&task.filepath.to_string_lossy(), DownloadStatus::TokenError);
+                            context.manager.record_failure(&task_name, DownloadStatus::TokenError);
                             *error_lock = Some(e);
                         }
                     }
-                    Err(e) => { error!("未捕获的错误在并发循环中: {}", e); }
+                    Err(e) => { 
+                        error!("未捕获的错误在并发循环中: {}", e);
+                        if !all_sizes_available { main_pbar.inc(1); }
+                    }
                 }
-                main_pbar.inc(1);
-                active_tasks.lock().unwrap().remove(&task_id);
-                update_msg(&main_pbar, &active_tasks);
             }
         }).await;
+        
+        // main_pbar.finish_with_message("所有下载任务完成!");
         main_pbar.finish_and_clear();
 
         if self.context.cancellation_token.load(Ordering::Relaxed) { return Err(AppError::UserInterrupt); }
@@ -421,7 +455,12 @@ impl ResourceDownloader {
         Ok(())
     }
 
-    async fn process_single_task(item: FileInfo, context: DownloadJobContext) -> AppResult<DownloadResult> {
+    async fn process_single_task(
+        item: FileInfo, 
+        context: DownloadJobContext,
+        pbar: ProgressBar,
+        use_byte_progress: bool,
+    ) -> AppResult<DownloadResult> {
         debug!("开始处理单个下载任务: {:?}", item.filepath);
         let attempt_result: AppResult<DownloadResult> = async {
             if let Some(parent) = item.filepath.parent() { fs::create_dir_all(parent)?; }
@@ -431,25 +470,26 @@ impl ResourceDownloader {
             if action == DownloadAction::Skip {
                 return Ok(DownloadResult {
                     filename: item.filepath.file_name().unwrap().to_string_lossy().to_string(),
-                    status: DownloadStatus::Skipped,
-                    message: Some(reason),
+                    status: DownloadStatus::Skipped, message: Some(reason),
                 });
             }
+            
             let is_m3u8 = item.url.ends_with(constants::api::resource_formats::M3U8);
             let download_status = if is_m3u8 {
-                M3u8Downloader::new(context.clone()).download(&item).await?
+                M3u8Downloader::new(context.clone()).download(&item, pbar, use_byte_progress).await?
             } else {
-                Self::download_standard_file(&item, resume_bytes, &context).await?
+                Self::download_standard_file(&item, resume_bytes, &context, pbar, use_byte_progress).await?
             };
+            
             let final_status = if download_status == DownloadStatus::Success || download_status == DownloadStatus::Resumed {
-                Self::finalize_and_validate(&item, is_m3u8)?
+                Self::finalize_and_validate(&item)?
             } else {
                 download_status
             };
+            
             Ok(DownloadResult {
                 filename: item.filepath.file_name().unwrap().to_string_lossy().to_string(),
-                status: final_status,
-                message: None,
+                status: final_status, message: None,
             })
         }.await;
         match attempt_result {
@@ -459,11 +499,44 @@ impl ResourceDownloader {
                 error!("处理任务 '{:?}' 时发生错误: {}", item.filepath, e);
                 Ok(DownloadResult {
                     filename: item.filepath.file_name().unwrap().to_string_lossy().to_string(),
-                    status: DownloadStatus::from(&e),
-                    message: Some(e.to_string()),
+                    status: DownloadStatus::from(&e), message: Some(e.to_string()),
                 })
             }
         }
+    }
+
+    fn check_local_file_status(item: &FileInfo) -> AppResult<ValidationStatus> {
+        if !item.filepath.exists() {
+            return Ok(ValidationStatus::Invalid("文件不存在".to_string()));
+        }
+        let actual_size = item.filepath.metadata()?.len();
+        if actual_size == 0 {
+            return Ok(ValidationStatus::Invalid("文件为空(0字节)".to_string()));
+        }
+        if item.ti_md5.is_none() && item.ti_size.is_none() {
+            return Ok(ValidationStatus::NoInfoToValidate);
+        }
+        if let Some(expected_size) = item.ti_size {
+            if actual_size != expected_size {
+                let is_m3u8 = item.url.ends_with(".m3u8");
+                let tolerance = if is_m3u8 { (expected_size as f64 * 0.01) as u64 } else { 0 };
+                
+                if (actual_size as i64 - expected_size as i64).abs() as u64 > tolerance {
+                    if actual_size < expected_size {
+                        return Ok(ValidationStatus::CanResume(actual_size));
+                    } else {
+                        return Ok(ValidationStatus::Invalid(format!("大小错误 (预期: {}, 实际: {})", HumanBytes(expected_size), HumanBytes(actual_size))));
+                    }
+                }
+            }
+        }
+        if let Some(expected_md5) = &item.ti_md5 {
+            let actual_md5 = utils::calculate_file_md5(&item.filepath)?;
+            if !actual_md5.eq_ignore_ascii_case(expected_md5) {
+                return Ok(ValidationStatus::Invalid("MD5不匹配".to_string()));
+            }
+        }
+        Ok(ValidationStatus::Valid)
     }
 
     fn prepare_download_action(item: &FileInfo, args: &Cli) -> AppResult<(DownloadAction, u64, String)> {
@@ -472,70 +545,33 @@ impl ResourceDownloader {
             info!("用户强制重新下载文件: {:?}", item.filepath);
             return Ok((DownloadAction::DownloadNew, 0, "强制重新下载".to_string()));
         }
-        if item.url.ends_with(constants::api::resource_formats::M3U8) {
-            info!("视频文件 {:?} 已存在，跳过下载。使用 -f 强制重下。", item.filepath);
-            return Ok((DownloadAction::Skip, 0, "视频已存在 (使用 -f 强制重下)".to_string()));
-        }
-        match Self::validate_file(&item.filepath, item.ti_md5.as_deref(), item.ti_size) {
-            Ok(_) => {
-                info!("文件 {:?} 已存在且校验通过，跳过。使用 -f 强制重下。", item.filepath);
-                Ok((DownloadAction::Skip, 0, "文件已存在且校验通过 (使用 -f 强制重下)".to_string()))
-            }
-            Err(e) => {
-                warn!("文件 '{:?}' 存在但校验失败: {}", item.filepath, e);
-                let actual_size = item.filepath.metadata()?.len();
-                if let Some(expected_size) = item.ti_size {
-                    if actual_size > 0 && actual_size < expected_size {
-                        info!("文件 '{:?}' 不完整 ({} / {} bytes)，将进行续传。", item.filepath, actual_size, expected_size);
-                        return Ok((DownloadAction::Resume, actual_size, "文件不完整，尝试续传".to_string()));
-                    }
-                }
-                println!("{} {} - 文件已存在但校验失败，将重新下载。", *symbols::WARN, item.filepath.display());
-                info!("文件 '{:?}' 存在但校验失败，将重新下载。", item.filepath);
-                Ok((DownloadAction::DownloadNew, 0, "文件校验失败".to_string()))
-            }
+        match Self::check_local_file_status(item)? {
+            ValidationStatus::Valid => Ok((DownloadAction::Skip, 0, "文件已存在且校验通过".to_string())),
+            ValidationStatus::CanResume(from) => Ok((DownloadAction::Resume, from, "文件不完整，尝试续传".to_string())),
+            ValidationStatus::Invalid(reason) => Ok((DownloadAction::DownloadNew, 0, format!("文件无效: {}", reason))),
+            ValidationStatus::NoInfoToValidate => Ok((DownloadAction::Skip, 0, "文件已存在 (无校验信息)".to_string())),
         }
     }
 
-    fn finalize_and_validate(item: &FileInfo, is_m3u8: bool) -> AppResult<DownloadStatus> {
+    fn finalize_and_validate(item: &FileInfo) -> AppResult<DownloadStatus> {
         debug!("对文件 '{:?}' 进行最终校验", item.filepath);
-        if !item.filepath.exists() || item.filepath.metadata()?.len() == 0 {
-            error!("下载完成但文件 '{:?}' 不存在或为空。", item.filepath);
-            return Ok(DownloadStatus::SizeFailed);
-        }
-        if is_m3u8 { return Ok(DownloadStatus::Success); }
-        match Self::validate_file(&item.filepath, item.ti_md5.as_deref(), item.ti_size) {
-            Ok(_) => {
-                debug!("文件 '{:?}' 校验成功。", item.filepath);
-                Ok(DownloadStatus::Success)
+        match Self::check_local_file_status(item)? {
+            ValidationStatus::Valid | ValidationStatus::NoInfoToValidate => Ok(DownloadStatus::Success),
+            ValidationStatus::CanResume(_) => {
+                error!("文件 '{:?}' 下载后仍不完整，校验失败。", item.filepath);
+                Ok(DownloadStatus::SizeFailed)
             }
-            Err(e @ AppError::Validation(_)) => {
-                error!("文件 '{:?}' 最终校验失败: {}", item.filepath, e);
-                Err(e)
+            ValidationStatus::Invalid(reason) => {
+                error!("文件 '{:?}' 最终校验失败: {}", item.filepath, reason);
+                if reason.contains("MD5") { Ok(DownloadStatus::Md5Failed) } else { Ok(DownloadStatus::SizeFailed) }
             }
-            Err(e) => Err(e),
         }
     }
 
-    fn validate_file(filepath: &Path, expected_md5: Option<&str>, expected_size: Option<u64>) -> AppResult<()> {
-        if let Some(size) = expected_size {
-            let actual_size = filepath.metadata()?.len();
-            if actual_size != size {
-                trace!("大小校验失败 for '{:?}': expected {}, got {}", filepath, size, actual_size);
-                return Err(AppError::Validation("大小不匹配".to_string()));
-            }
-        }
-        if let Some(md5) = expected_md5 {
-            let actual_md5 = utils::calculate_file_md5(filepath)?;
-            if !actual_md5.eq_ignore_ascii_case(md5) {
-                trace!("MD5校验失败 for '{:?}': expected {}, got {}", filepath, md5, actual_md5);
-                return Err(AppError::Validation("MD5不匹配".to_string()));
-            }
-        }
-        Ok(())
-    }
-
-    async fn download_standard_file(item: &FileInfo, resume_from: u64, context: &DownloadJobContext) -> AppResult<DownloadStatus> {
+    async fn download_standard_file(
+        item: &FileInfo, resume_from: u64, context: &DownloadJobContext,
+        pbar: ProgressBar, use_byte_progress: bool,
+    ) -> AppResult<DownloadStatus> {
         let mut current_resume_from = resume_from;
         loop {
             let mut url = Url::parse(&item.url)?;
@@ -559,13 +595,21 @@ impl ResourceDownloader {
             }
             if res.status() == StatusCode::UNAUTHORIZED || res.status() == StatusCode::FORBIDDEN { return Err(AppError::TokenInvalid); }
             let res = res.error_for_status()?;
+            
             let mut file = if current_resume_from > 0 {
                 OpenOptions::new().write(true).append(true).open(&item.filepath)?
             } else {
                 File::create(&item.filepath)?
             };
+            
             let mut stream = res.bytes_stream();
-            while let Some(chunk_res) = stream.next().await { file.write_all(&chunk_res?)?; }
+            while let Some(chunk_res) = stream.next().await {
+                let chunk = chunk_res?;
+                file.write_all(&chunk)?;
+                if use_byte_progress {
+                    pbar.inc(chunk.len() as u64);
+                }
+            }
             return Ok(if current_resume_from > 0 { DownloadStatus::Resumed } else { DownloadStatus::Success });
         }
     }
