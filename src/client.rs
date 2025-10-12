@@ -79,7 +79,7 @@ impl RobustClient {
         url_template: &str,
         params: &[(&str, &str)],
     ) -> AppResult<T> {
-        let mut last_error = None;
+        let mut last_error: Option<AppError> = None;
         for prefix in &self.config.server_prefixes {
             let mut url = url_template.replace("{prefix}", prefix);
             for (key, val) in params {
@@ -89,7 +89,18 @@ impl RobustClient {
                 Ok(res) => {
                     let text = res.text().await?;
                     trace!("Raw JSON response from {}: {}", url, text);
-                    return serde_json::from_str(&text).map_err(AppError::from);
+                    
+                    match serde_json::from_str::<T>(&text) {
+                        Ok(data) => return Ok(data), // 解析成功，直接返回
+                        Err(e) => {
+                            warn!(
+                                "服务器 '{}' 响应成功但JSON解析失败: {:?}. 尝试下一个服务器...",
+                                prefix, e
+                            );
+                            last_error = Some(AppError::from(e));
+                            // 继续循环，尝试下一个服务器
+                        }
+                    }
                 }
                 Err(e) => {
                     warn!("服务器 '{}' 请求失败: {:?}", prefix, e);
