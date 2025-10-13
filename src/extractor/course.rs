@@ -67,7 +67,42 @@ impl CourseExtractor {
         debug!("课程 '{}' 的基础目录解析为: {:?}", course_title, final_path);
         final_path
     }
-    
+
+    fn process_single_resource(
+        &self,
+        resource: &CourseResource,
+        index: usize,
+        base_dir: &Path,
+        teacher_map: &HashMap<usize, String>,
+        selected_qualities: &Option<Vec<String>>,
+    ) -> Vec<FileInfo> {
+        let title = utils::sanitize_filename(&resource.global_title.zh_cn);
+        let type_name = utils::sanitize_filename(
+            resource.custom_properties.alias_name.as_deref().unwrap_or("")
+        );
+        let teacher = teacher_map.get(&index)
+            .cloned()
+            .unwrap_or_else(|| constants::UNCLASSIFIED_DIR.to_string());
+        
+        let mut files = Vec::new();
+        if resource.resource_type_code == constants::api::resource_types::ASSETS_VIDEO {
+            files.extend(self.process_video_resource(
+                resource, &title, &type_name, &teacher, base_dir, selected_qualities
+            ));
+        } else if [
+            constants::api::resource_types::ASSETS_DOCUMENT, 
+            constants::api::resource_types::COURSEWARES, 
+            constants::api::resource_types::LESSON_PLANDESIGN
+        ].contains(&resource.resource_type_code.as_str()) {
+            if let Some(file_info) = self.process_document_resource(
+                resource, &title, &type_name, &teacher, base_dir
+            ) {
+                files.push(file_info);
+            }
+        }
+        files
+    }
+
     fn parse_res_ref_indices(&self, ref_str: &str, total_resources: usize) -> Option<Vec<usize>> {
         REF_INDEX_RE.captures(ref_str).and_then(|caps| {
             caps.get(1).map(|m| {
@@ -273,19 +308,7 @@ impl ResourceExtractor for CourseExtractor {
         let results: Vec<FileInfo> = all_resources.iter()
             .enumerate()
             .flat_map(|(index, resource)| {
-                let title = utils::sanitize_filename(&resource.global_title.zh_cn);
-                let type_name = utils::sanitize_filename(resource.custom_properties.alias_name.as_deref().unwrap_or(""));
-                let teacher = teacher_map.get(&index).cloned().unwrap_or_else(|| constants::UNCLASSIFIED_DIR.to_string());
-                
-                let mut files = Vec::new();
-                if resource.resource_type_code == constants::api::resource_types::ASSETS_VIDEO {
-                    files.extend(self.process_video_resource(resource, &title, &type_name, &teacher, &base_dir, &user_selected_qualities));
-                } else if [constants::api::resource_types::ASSETS_DOCUMENT, constants::api::resource_types::COURSEWARES, constants::api::resource_types::LESSON_PLANDESIGN].contains(&resource.resource_type_code.as_str()) {
-                    if let Some(file_info) = self.process_document_resource(resource, &title, &type_name, &teacher, &base_dir) {
-                        files.push(file_info);
-                    }
-                }
-                files
+                self.process_single_resource(resource, index, &base_dir, &teacher_map, &user_selected_qualities)
             })
             .collect();
         

@@ -116,19 +116,36 @@ impl TextbookExtractor {
         let audio_path = textbook_basename.map(|b| base_path.join(format!("{} - [audio]", b))).unwrap_or(base_path);
         debug!("音频文件将保存至: {:?}", audio_path);
 
+        // 预计算总数和位宽
+        let total_items = audio_items.len();
+        // 计算总数的位数，例如 66 -> 2位, 120 -> 3位
+        let width = if total_items == 0 { 1 } else { (total_items as f64).log10() as usize + 1 };
+
         let results = audio_items
             .iter()
             .enumerate()
             .flat_map(|(i, item)| {
                 let title = &item.global_title.zh_cn;
-                let base_name = format!("{:03} {}", i + 1, utils::sanitize_filename(title));
+                
+                let index_prefix = format!("{:0width$}", i + 1, width = width);
+                // 风格1: 连接符 " - "
+                // let base_name = format!("{} - {}", index_prefix, utils::sanitize_filename(title));
+                // 风格2: 方括号 "[...]"
+                let base_name = format!("[{}] {}", index_prefix, utils::sanitize_filename(title));
+                
                 let audio_path_clone = audio_path.clone();
                 
                 selected_formats.iter().filter_map(move |format| {
                     let format_lower = format.to_lowercase();
                     let ti = item.ti_items.as_ref()?
                         .iter()
-                        .find(|ti| ti.ti_format == format_lower)?;
+                        .find(|ti| ti.ti_format == format_lower && ti.ti_file_flag.as_deref() == Some("href"))
+                        .or_else(|| {
+                            item.ti_items.as_ref()?.iter().find(|ti| {
+                                ti.ti_format == format_lower && ti.ti_storages.as_ref().map_or(false, |s| !s.is_empty())
+                            })
+                        })?;
+                    
                     let url = ti.ti_storages.as_ref()?.get(0)?;
 
                     debug!("提取到音频文件: '{}.{}' @ '{}'", base_name, &format_lower, url);

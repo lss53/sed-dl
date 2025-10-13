@@ -17,6 +17,7 @@ use std::{
 };
 use indicatif::ProgressBar;
 use url::Url;
+use ecb;
 
 pub(super) type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
@@ -75,6 +76,75 @@ impl M3u8Downloader {
         self.merge_ts_segments(temp_dir.path(), segment_urls.len(), &item.filepath)?;
         info!("分片合并完成 -> {}", item.filepath.display());
         Ok(DownloadStatus::Success)
+    }
+
+    fn merge_ts_segments(&self, temp_dir: &Path, num_segments: usize, output_path: &std::path::PathBuf) -> AppResult<()> {
+        let temp_output_path = output_path.with_extension("tmp");
+        let mut writer = BufWriter::new(File::create(&temp_output_path)?);
+        for i in 0..num_segments {
+            let ts_path = temp_dir.join(format!("{:05}.ts", i));
+            if !ts_path.exists() {
+                let filename = ts_path.file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "未知分片".to_string());
+                return Err(AppError::Merge(format!("丢失视频分片: {}", filename)));
+            }
+            let mut reader = File::open(ts_path)?;
+            io::copy(&mut reader, &mut writer)?;
+        }
+        writer.flush()?;
+        fs::rename(temp_output_path, output_path)?;
+        Ok(())
+    }
+
+    async fn fetch_and_parse_playlist(&self, url: &Url) -> AppResult<m3u8_rs::MediaPlaylist> {
+        debug!("获取并解析 M3U8 文件: {}", url);
+        let playlist_text = self.context.http_client.get(url.clone()).await?.text().await?;
+        
+        match m3u8_rs::parse_playlist_res(playlist_text.as_bytes()) {
+            Ok(m3u8_rs::Playlist::MediaPlaylist(media)) => Ok(media),
+            Ok(_) => Err(AppError::M3u8Parse("预期的M3U8文件不是媒体播放列表".to_string())),
+            Err(e) => Err(AppError::M3u8Parse(e.to_string())),
+        }
+    }
+
+    async fn fetch_and_decrypt_key(&self, base_url: &Url, key_uri: &str) -> AppResult<Vec<u8>> {
+        debug!("在M3U8中找到加密信息. Key URI: {}", key_uri);
+        let key_url = base_url.join(key_uri)?;
+
+        // 1. 获取 nonce
+        let nonce_url = format!("{}/signs", key_url);
+        debug!("获取 nonce from: {}", nonce_url);
+        let signs_data: Value = self.context.http_client.get(&nonce_url).await?.json().await?;
+        let nonce = signs_data.get("nonce").and_then(Value::as_str)
+            .ok_or_else(|| AppError::M3u8Parse("密钥服务器响应中未找到 'nonce'".to_string()))?;
+
+        // 2. 计算 sign
+        let key_filename = key_url.path_segments().and_then(|s| s.last())
+            .ok_or_else(|| AppError::M3u8Parse(format!("无法从密钥URL中提取文件名: {}", key_url)))?;
+        let sign_material = format!("{}{}", nonce, key_filename);
+        let mut hasher = Md5::new();
+        hasher.update(sign_material.as_bytes());
+        let result = hasher.finalize();
+        let sign = &format!("{:x}", result)[..16];
+        debug!("计算得到 sign: {}", sign);
+
+        // 3. 获取加密的 key
+        let final_key_url = format!("{}?nonce={}&sign={}", key_url, nonce, sign);
+        debug!("获取最终密钥 from: {}", final_key_url);
+        let key_data: Value = self.context.http_client.get(&final_key_url).await?.json().await?;
+        let encrypted_key_b64 = key_data.get("key").and_then(Value::as_str)
+            .ok_or_else(|| AppError::M3u8Parse("密钥服务器响应中未找到加密密钥 'key'".to_string()))?;
+
+        // 4. 解密 key
+        let encrypted_key = BASE64.decode(encrypted_key_b64)?;
+        type EcbDec = ecb::Decryptor<aes::Aes128>;
+        let cipher = EcbDec::new(sign.as_bytes().into());
+        let decrypted_key = cipher.decrypt_padded_vec_mut::<Pkcs7>(&encrypted_key)
+            .map_err(|e| AppError::Security(format!("AES密钥解密失败: {}", e)))?;
+        
+        debug!("密钥解密成功");
+        Ok(decrypted_key)
     }
 
     async fn download_segments_with_retry(
@@ -166,70 +236,35 @@ impl M3u8Downloader {
         Ok(())
     }
 
-    fn merge_ts_segments(&self, temp_dir: &Path, num_segments: usize, output_path: &std::path::PathBuf) -> AppResult<()> {
-        let temp_output_path = output_path.with_extension("tmp");
-        let mut writer = BufWriter::new(File::create(&temp_output_path)?);
-        for i in 0..num_segments {
-            let ts_path = temp_dir.join(format!("{:05}.ts", i));
-            if !ts_path.exists() {
-                let filename = ts_path.file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "未知分片".to_string());
-                return Err(AppError::Merge(format!("丢失视频分片: {}", filename)));
-            }
-            let mut reader = File::open(ts_path)?;
-            io::copy(&mut reader, &mut writer)?;
-        }
-        writer.flush()?;
-        fs::rename(temp_output_path, output_path)?;
-        Ok(())
-    }
+    async fn get_m3u8_key_and_playlist(
+        &self, 
+        m3u8_url: Url
+    ) -> AppResult<(Option<Vec<u8>>, Option<String>, m3u8_rs::MediaPlaylist)> {
+        // 步骤 1: 获取并解析播放列表
+        let media_playlist = self.fetch_and_parse_playlist(&m3u8_url).await?;
 
-    async fn get_m3u8_key_and_playlist(&self, m3u8_url: Url) -> AppResult<(Option<Vec<u8>>, Option<String>, m3u8_rs::MediaPlaylist)> {
-        debug!("获取并解析 M3U8 文件: {}", m3u8_url);
-        let playlist_text = self.context.http_client.get(m3u8_url.clone()).await?.text().await?;
-        let playlist = m3u8_rs::parse_playlist_res(playlist_text.as_bytes()).map_err(|e| AppError::M3u8Parse(e.to_string()))?;
-
-        let m3u8_rs::Playlist::MediaPlaylist(media) = playlist else {
-            return Err(AppError::M3u8Parse("预期的M3U8文件不是媒体播放列表".to_string()));
-        };
-
-        let Some((uri, iv)) = media.segments.iter().find_map(|seg| seg.key.as_ref().and_then(|k|
-            if let m3u8_rs::Key { uri: Some(uri), iv, .. } = k { Some((uri.clone(), iv.clone())) } else { None }
-        )) else {
+        // 步骤 2: 检查是否加密，并提取加密信息
+        let Some((key_uri, iv)) = media_playlist.segments.iter().find_map(|seg| {
+            seg.key.as_ref().and_then(|k| {
+                if let m3u8_rs::Key { uri: Some(uri), iv, .. } = k {
+                    Some((uri.clone(), iv.clone()))
+                } else {
+                    None
+                }
+            })
+        }) else {
+            // 如果没有找到加密信息，直接返回
             debug!("M3U8 未加密");
-            return Ok((None, None, media));
+            return Ok((None, None, media_playlist));
         };
 
-        debug!("在M3U8中找到加密信息. Key URI: {}, IV: {:?}", uri, iv);
-        let key_url = m3u8_url.join(&uri)?;
-        let nonce_url = format!("{}/signs", key_url);
-        debug!("获取 nonce from: {}", nonce_url);
-        let signs_data: Value = self.context.http_client.get(&nonce_url).await?.json().await?;
-        let nonce = signs_data.get("nonce").and_then(Value::as_str).ok_or_else(|| AppError::M3u8Parse("密钥服务器响应中未找到 'nonce'".to_string()))?;
+        // 步骤 3: 如果已加密，获取并解密密钥
+        let decrypted_key = self.fetch_and_decrypt_key(&m3u8_url, &key_uri).await?;
 
-        let key_filename = key_url.path_segments().and_then(|s| s.last()).ok_or_else(|| AppError::M3u8Parse(format!("无法从密钥URL中提取文件名: {}", key_url)))?;
-        let sign_material = format!("{}{}", nonce, key_filename);
-        let mut hasher = Md5::new();
-        hasher.update(sign_material.as_bytes());
-        let result = hasher.finalize();
-        let sign = &format!("{:x}", result)[..16];
-        debug!("计算得到 sign: {}", sign);
-
-        let final_key_url = format!("{}?nonce={}&sign={}", key_url, nonce, sign);
-        debug!("获取最终密钥 from: {}", final_key_url);
-        let key_data: Value = self.context.http_client.get(&final_key_url).await?.json().await?;
-        let encrypted_key_b64 = key_data.get("key").and_then(Value::as_str).ok_or_else(|| AppError::M3u8Parse("密钥服务器响应中未找到加密密钥 'key'".to_string()))?;
-
-        let encrypted_key = BASE64.decode(encrypted_key_b64)?;
-        type EcbDec = ecb::Decryptor<aes::Aes128>;
-        let cipher = EcbDec::new(sign.as_bytes().into());
-        let decrypted_key = cipher.decrypt_padded_vec_mut::<Pkcs7>(&encrypted_key).map_err(|e| AppError::Security(format!("AES密钥解密失败: {}", e)))?;
-        debug!("密钥解密成功");
-        Ok((Some(decrypted_key), iv, media))
+        // 步骤 4: 返回所有结果
+        Ok((Some(decrypted_key), iv, media_playlist))
     }
 }
-
 
 #[cfg(test)]
 mod tests {
