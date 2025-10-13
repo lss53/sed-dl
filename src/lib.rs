@@ -24,7 +24,7 @@ use colored::*;
 use log::{debug, info};
 use std::{
     path::Path,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{Arc, atomic::AtomicBool},
 };
 use tokio::sync::Mutex as TokioMutex;
 use url::Url;
@@ -41,9 +41,8 @@ pub struct DownloadJobContext {
     pub cancellation_token: Arc<AtomicBool>,
 }
 
-
 /// 验证命令行参数的组合是否有效
-fn validate_cli_args(args: &Cli) -> AppResult<()> { 
+fn validate_cli_args(args: &Cli) -> AppResult<()> {
     if (args.id.is_some() || args.batch_file.is_some()) && args.r#type.is_none() {
         return Err(AppError::Other(anyhow!(
             "使用 --id 或 --batch-file 时，必须提供 --type 参数。"
@@ -77,7 +76,7 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
 
     validate_cli_args(&args)?;
 
-    let (token_opt, source) = config::resolve_token(args.token.as_deref());
+    let (token_opt, source) = config::token::resolve_token(args.token.as_deref());
     if token_opt.is_some() {
         info!("从 {} 加载 Access Token", source);
         println!("\n{} 已从 {} 加载 Access Token。", *symbols::INFO, source);
@@ -85,7 +84,11 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
         info!("未找到本地 Access Token");
         println!(
             "\n{}",
-            format!("{} 未找到本地 Access Token，将在需要时提示输入。", *symbols::INFO).yellow()
+            format!(
+                "{} 未找到本地 Access Token，将在需要时提示输入。",
+                *symbols::INFO
+            )
+            .yellow()
         );
     }
     let token = Arc::new(TokioMutex::new(token_opt.unwrap_or_default()));
@@ -111,7 +114,7 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
     } else if let Some(id) = &args.id {
         ResourceDownloader::new(context).run_with_id(id).await?;
     };
-    
+
     Ok(())
 }
 
@@ -127,11 +130,11 @@ async fn handle_interactive_mode(base_context: DownloadJobContext) -> AppResult<
                 let context = base_context.clone();
                 // 忽略单个任务的错误，以便继续交互模式
                 if let Err(e) = process_single_task_cli(&input, context).await {
-                     log::error!("交互模式任务 '{}' 失败: {}", input, e);
-                     eprintln!("\n{} 处理任务时发生错误: {}", *symbols::ERROR, e);
+                    log::error!("交互模式任务 '{}' 失败: {}", input, e);
+                    eprintln!("\n{} 处理任务时发生错误: {}", *symbols::ERROR, e);
                 }
             }
-            Ok(_) => break, // 用户输入空行，退出
+            Ok(_) => break,                                // 用户输入空行，退出
             Err(_) => return Err(AppError::UserInterrupt), // Ctrl-C
         }
     }
@@ -140,11 +143,10 @@ async fn handle_interactive_mode(base_context: DownloadJobContext) -> AppResult<
 }
 
 async fn process_batch_tasks(batch_file: &Path, base_context: DownloadJobContext) -> AppResult<()> {
-    let content = std::fs::read_to_string(batch_file)
-        .map_err(|e| {
-            log::error!("读取批量文件 '{}' 失败: {}", batch_file.display(), e);
-            AppError::from(e)
-        })?;
+    let content = std::fs::read_to_string(batch_file).map_err(|e| {
+        log::error!("读取批量文件 '{}' 失败: {}", batch_file.display(), e);
+        AppError::from(e)
+    })?;
 
     let tasks: Vec<String> = content
         .lines()
@@ -153,19 +155,32 @@ async fn process_batch_tasks(batch_file: &Path, base_context: DownloadJobContext
         .collect();
     if tasks.is_empty() {
         log::warn!("批量文件 '{}' 为空或不含有效行。", batch_file.display());
-        println!("{} 批量文件 '{}' 为空。", *symbols::WARN, batch_file.display());
+        println!(
+            "{} 批量文件 '{}' 为空。",
+            *symbols::WARN,
+            batch_file.display()
+        );
         return Ok(());
     }
 
     let mut success = 0;
     let mut failed = 0;
-    ui::print_header(&format!("开始批量处理任务 (按 {} 可随时退出)", *symbols::CTRL_C));
+    ui::print_header(&format!(
+        "开始批量处理任务 (按 {} 可随时退出)",
+        *symbols::CTRL_C
+    ));
     for (i, task) in tasks.iter().enumerate() {
-        if base_context.cancellation_token.load(std::sync::atomic::Ordering::Relaxed) {
-             return Err(AppError::UserInterrupt);
+        if base_context
+            .cancellation_token
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(AppError::UserInterrupt);
         }
         ui::print_sub_header(&format!(
-            "批量任务 {}/{} - {}", i + 1, tasks.len(), utils::truncate_text(task, 60)
+            "批量任务 {}/{} - {}",
+            i + 1,
+            tasks.len(),
+            utils::truncate_text(task, 60)
         ));
         let context = base_context.clone();
         match process_single_task_cli(task, context.clone()).await {
@@ -195,7 +210,10 @@ async fn process_batch_tasks(batch_file: &Path, base_context: DownloadJobContext
 async fn process_single_task_cli(task_input: &str, context: DownloadJobContext) -> AppResult<()> {
     let result: AppResult<bool> = if utils::is_resource_id(task_input) {
         if context.args.r#type.is_none() {
-            let msg = format!("任务 '{}' 是一个ID，但未提供 --type 参数，跳过。", task_input);
+            let msg = format!(
+                "任务 '{}' 是一个ID，但未提供 --type 参数，跳过。",
+                task_input
+            );
             log::error!("{}", msg);
             eprintln!("{} {}", *symbols::ERROR, msg);
             return Err(AppError::Other(anyhow!(msg)));

@@ -4,7 +4,7 @@ pub mod chapter_resolver;
 pub mod course;
 pub mod textbook;
 
-use crate::{error::*, models::FileInfo, DownloadJobContext};
+use crate::{DownloadJobContext, error::*, models::FileInfo};
 use async_trait::async_trait;
 
 #[async_trait]

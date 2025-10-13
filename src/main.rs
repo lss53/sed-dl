@@ -3,12 +3,17 @@
 use clap::{CommandFactory, FromArgMatches};
 use colored::*;
 use log::{error, info, warn};
-use sed_dl::{cli::{Cli, LogLevel}, constants, error::AppError, run_from_cli, symbols};
+use sed_dl::{
+    cli::{Cli, LogLevel},
+    constants,
+    error::AppError,
+    run_from_cli, symbols,
+};
 use std::{
     env,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -38,7 +43,8 @@ fn init_logger(level: LogLevel) {
                 .join(constants::LOG_FILE_NAME)
         }
     };
-    
+
+    #[allow(clippy::collapsible_if)] 
     if let Some(dir) = log_file_path.parent() {
         if let Err(e) = std::fs::create_dir_all(dir) {
             eprintln!("警告: 无法创建日志目录 {:?}: {}", dir, e);
@@ -49,24 +55,24 @@ fn init_logger(level: LogLevel) {
         Ok(file) => file,
         Err(e) => {
             eprintln!(
-                "警告: 无法打开日志文件 {:?} : {}。将尝试使用备用日志文件。", 
+                "警告: 无法打开日志文件 {:?} : {}。将尝试使用备用日志文件。",
                 log_file_path, e
             );
-            
+
             let fallback_path = std::env::temp_dir().join(format!(
                 "{}-{}",
                 app_name,
                 constants::LOG_FALLBACK_FILE_NAME
             ));
-            
+
             match fern::log_file(&fallback_path) {
                 Ok(fb_file) => {
-                    warn!("日志将写入备用文件: {:?}", fallback_path); 
+                    warn!("日志将写入备用文件: {:?}", fallback_path);
                     fb_file
-                },
+                }
                 Err(e_fb) => {
                     eprintln!(
-                        "错误: 无法创建备用日志文件 {:?}: {}。日志将不会被记录到文件。", 
+                        "错误: 无法创建备用日志文件 {:?}: {}。日志将不会被记录到文件。",
                         fallback_path, e_fb
                     );
                     return;
@@ -89,9 +95,9 @@ fn init_logger(level: LogLevel) {
         })
         .chain(file_appender)
         .apply();
-    
+
     if let Err(e) = result {
-         eprintln!("警告: 日志系统初始化失败: {}", e);
+        eprintln!("警告: 日志系统初始化失败: {}", e);
     }
 }
 
@@ -102,16 +108,16 @@ async fn main() {
         colored::control::set_virtual_terminal(true).ok();
     }
 
-// 直接在 format! 宏中使用 clap::crate_name!()
-let after_help = format!(
-    "示例:\n  # 启动交互模式 (推荐)\n  {bin} -i\n\n  # 自动下载单个链接中的所有内容\n  {bin} --url \"https://...\"\n\n  # 批量下载并显示调试信息 (日志写入文件)\n  {bin} -b my_links.txt --type tchMaterial --log-level debug\n\n  # 获取 Token 帮助\n  {bin} --token-help",
-    bin = clap::crate_name!()
-);
+    // 直接在 format! 宏中使用 clap::crate_name!()
+    let after_help = format!(
+        "示例:\n  # 启动交互模式 (推荐)\n  {bin} -i\n\n  # 自动下载单个链接中的所有内容\n  {bin} --url \"https://...\"\n\n  # 批量下载并显示调试信息 (日志写入文件)\n  {bin} -b my_links.txt --type tchMaterial --log-level debug\n\n  # 获取 Token 帮助\n  {bin} --token-help",
+        bin = clap::crate_name!()
+    );
 
-let cmd = Cli::command()
-    .override_usage(format!("{} <MODE> [OPTIONS]", clap::crate_name!()))
-    .after_help(after_help);
-    
+    let cmd = Cli::command()
+        .override_usage(format!("{} <MODE> [OPTIONS]", clap::crate_name!()))
+        .after_help(after_help);
+
     let matches = cmd.get_matches();
     let args = Arc::new(Cli::from_arg_matches(&matches).unwrap());
 
@@ -125,14 +131,18 @@ let cmd = Cli::command()
             error!("无法监听 Ctrl-C 信号: {}", e);
             return;
         }
-        
+
         if handler_token.load(Ordering::Relaxed) {
             println!("\n第二次中断，强制退出...");
             warn!("用户第二次按下 Ctrl+C，强制退出。");
             std::process::exit(130);
         }
 
-        println!("\n{} 正在停止... 请等待当前任务完成。再按一次 {} 可强制退出。", *symbols::WARN, *symbols::CTRL_C);
+        println!(
+            "\n{} 正在停止... 请等待当前任务完成。再按一次 {} 可强制退出。",
+            *symbols::WARN,
+            *symbols::CTRL_C
+        );
         warn!("用户通过 Ctrl+C 请求中断程序。");
         handler_token.store(true, Ordering::Relaxed);
     });
@@ -147,13 +157,17 @@ let cmd = Cli::command()
             AppError::TokenInvalid => {
                 error!("程序因Token无效而退出: {}", e);
                 eprintln!("\n{} {}", *symbols::ERROR, format!("{}", e).red());
-                eprintln!("{} {}", *symbols::INFO, "请使用 --token-help 命令查看如何获取或更新您的 Access Token。");
+                eprintln!("{} 请使用 --token-help 命令查看如何获取或更新您的 Access Token。", *symbols::INFO);
                 std::process::exit(1);
             }
             _ => {
                 // 其他所有错误
                 error!("程序执行出错: {}", e);
-                eprintln!("\n{} {}", *symbols::ERROR, format!("程序执行出错: {}", e).red());
+                eprintln!(
+                    "\n{} {}",
+                    *symbols::ERROR,
+                    format!("程序执行出错: {}", e).red()
+                );
                 std::process::exit(1);
             }
         }

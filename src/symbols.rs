@@ -1,7 +1,7 @@
 // src/symbols.rs
 
+use colored::{ColoredString, Colorize};
 use std::sync::LazyLock;
-use colored::{Colorize, ColoredString};
 
 pub static OK: LazyLock<ColoredString> = LazyLock::new(|| "[OK]".green());
 pub static ERROR: LazyLock<ColoredString> = LazyLock::new(|| "[X]".red());

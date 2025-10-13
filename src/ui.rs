@@ -14,11 +14,7 @@ pub fn print_sub_header(title: &str) {
     println!("\n--- {} ---", title.bold());
 }
 
-pub fn box_message(
-    title: &str,
-    content: &[&str],
-    color_func: fn(ColoredString) -> ColoredString,
-) {
+pub fn box_message(title: &str, content: &[&str], color_func: fn(ColoredString) -> ColoredString) {
     println!("\n┌{}┐", "─".repeat(constants::UI_WIDTH - 2));
     println!("  {}", color_func(title.bold()));
     println!("├{}┤", "─".repeat(constants::UI_WIDTH - 2));
@@ -51,9 +47,15 @@ pub fn confirm(question: &str, default_yes: bool) -> bool {
         ) {
             Ok(choice) => {
                 let choice = choice.to_lowercase();
-                if choice == "y" { return true; }
-                if choice == "n" { return false; }
-                if choice.is_empty() { return default_yes; }
+                if choice == "y" {
+                    return true;
+                }
+                if choice == "n" {
+                    return false;
+                }
+                if choice.is_empty() {
+                    return default_yes;
+                }
                 println!("{}", "无效输入，请输入 'y' 或 'n'。".red());
             }
             Err(_) => return false,
@@ -101,12 +103,7 @@ pub fn get_user_choices_from_menu(
     if options.is_empty() {
         return vec![];
     }
-    let user_input = selection_menu(
-        options,
-        title,
-        "支持格式: 1, 3, 2-4, all",
-        default_choice,
-    );
+    let user_input = selection_menu(options, title, "支持格式: 1, 3, 2-4, all", default_choice);
     crate::utils::parse_selection_indices(&user_input, options.len())
         .into_iter()
         .map(|i| options[i].clone())

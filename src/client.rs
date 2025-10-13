@@ -6,9 +6,9 @@ use log::{debug, error, trace, warn};
 use reqwest::{IntoUrl, Response, StatusCode};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{
-    policies::ExponentialBackoff, 
-    RetryTransientMiddleware, 
-    DefaultRetryableStrategy // 直接从 crate 根导入
+    DefaultRetryableStrategy, // 直接从 crate 根导入
+    RetryTransientMiddleware,
+    policies::ExponentialBackoff,
 };
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
@@ -22,9 +22,8 @@ pub struct RobustClient {
 impl RobustClient {
     // ## 修改点 1: 更新中间件初始化 ##
     pub fn new(config: Arc<AppConfig>) -> AppResult<Self> {
-        let retry_policy =
-            ExponentialBackoff::builder().build_with_max_retries(config.max_retries);
-            
+        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(config.max_retries);
+
         let client = ClientBuilder::new(
             reqwest::Client::builder()
                 .user_agent(config.user_agent.clone())
@@ -39,7 +38,10 @@ impl RobustClient {
             DefaultRetryableStrategy,
         ))
         .build();
-        debug!("RobustClient created with max_retries={}", config.max_retries);
+        debug!(
+            "RobustClient created with max_retries={}",
+            config.max_retries
+        );
         Ok(Self { client, config })
     }
 
@@ -50,7 +52,7 @@ impl RobustClient {
 
         // `send()` 的错误现在主要是网络层面的
         let res = self.client.get(url_str).send().await?;
-        
+
         let status = res.status();
 
         // 手动检查 HTTP 状态码
@@ -59,8 +61,12 @@ impl RobustClient {
             Ok(res)
         } else {
             // 4xx 或 5xx 状态码，请求失败
-            warn!("HTTP request to {} resulted in status code: {}", res.url(), status);
-            
+            warn!(
+                "HTTP request to {} resulted in status code: {}",
+                res.url(),
+                status
+            );
+
             // 专门处理认证失败的情况
             if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
                 warn!("Status code indicates invalid token.");
@@ -89,7 +95,7 @@ impl RobustClient {
                 Ok(res) => {
                     let text = res.text().await?;
                     trace!("Raw JSON response from {}: {}", url, text);
-                    
+
                     match serde_json::from_str::<T>(&text) {
                         Ok(data) => return Ok(data), // 解析成功，直接返回
                         Err(e) => {
@@ -103,6 +109,11 @@ impl RobustClient {
                     }
                 }
                 Err(e) => {
+                    // 如果是 Token 错误，这是一个不可恢复的致命错误，立即中止并返回
+                    if matches!(e, AppError::TokenInvalid) {
+                        warn!("请求因 Token 无效而失败，停止尝试其他服务器。");
+                        return Err(e);
+                    }
                     warn!("服务器 '{}' 请求失败: {:?}", prefix, e);
                     last_error = Some(e);
                 }
@@ -111,7 +122,9 @@ impl RobustClient {
         error!("所有服务器均请求失败 for template: {}", url_template);
         match last_error {
             Some(err) => Err(err),
-            None => Err(AppError::Other(anyhow!("所有服务器均请求失败，且没有配置服务器前缀"))),
+            None => Err(AppError::Other(anyhow!(
+                "所有服务器均请求失败，且没有配置服务器前缀"
+            ))),
         }
     }
 }

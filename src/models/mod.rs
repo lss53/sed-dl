@@ -3,11 +3,11 @@
 pub mod api;
 
 use crate::error::AppError;
+use crate::symbols;
 use chrono::{DateTime, FixedOffset};
+use colored::{ColoredString, Colorize};
 use serde::Deserialize;
 use std::path::PathBuf;
-use colored::{Colorize, ColoredString};
-use crate::symbols;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FileInfo {
@@ -37,7 +37,13 @@ pub enum DownloadStatus {
 }
 
 impl DownloadStatus {
-    pub fn get_display_info(&self) -> (&'static ColoredString, fn(ColoredString) -> ColoredString, &'static str) {
+    pub fn get_display_info(
+        &self,
+    ) -> (
+        &'static ColoredString,
+        fn(ColoredString) -> ColoredString,
+        &'static str,
+    ) {
         match self {
             DownloadStatus::Success => (&symbols::OK, |s| s.green(), "下载并校验成功"),
             DownloadStatus::Resumed => (&symbols::OK, |s| s.green(), "续传成功，文件有效"),
@@ -52,7 +58,9 @@ impl DownloadStatus {
             DownloadStatus::KeyError => (&symbols::ERROR, |s| s.red(), "视频解密密钥获取失败"),
             DownloadStatus::TokenError => (&symbols::ERROR, |s| s.red(), "认证失败 (Token无效)"),
             DownloadStatus::IoError => (&symbols::ERROR, |s| s.red(), "本地文件读写错误"),
-            DownloadStatus::UnexpectedError => (&symbols::ERROR, |s| s.red(), "发生未预期的程序错误"),
+            DownloadStatus::UnexpectedError => {
+                (&symbols::ERROR, |s| s.red(), "发生未预期的程序错误")
+            }
         }
     }
 }
@@ -88,7 +96,6 @@ impl From<&AppError> for DownloadStatus {
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct DownloadResult {

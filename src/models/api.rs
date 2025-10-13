@@ -39,7 +39,6 @@ pub struct Tag {
     pub tag_name: String,
 }
 
-
 // --- 课程 (Course) API 响应结构体 ---
 
 #[derive(Deserialize, Debug, Clone)]
@@ -106,7 +105,6 @@ pub struct ResourceStructureRelation {
 pub struct ResourceStructureRelationCustomProperties {
     pub teacher_ids: Option<Vec<String>>,
 }
-
 
 // --- 教材 (Textbook) API 响应结构体 ---
 
