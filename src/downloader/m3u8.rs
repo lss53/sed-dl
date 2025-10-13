@@ -10,6 +10,7 @@ use indicatif::ProgressBar;
 use log::{debug, error, info, warn};
 use md5::{Digest, Md5};
 use serde_json::Value;
+use tempfile::NamedTempFile;
 use std::{
     fs::{self, File},
     io::{self, BufWriter, Write},
@@ -94,22 +95,30 @@ impl M3u8Downloader {
         num_segments: usize,
         output_path: &std::path::PathBuf,
     ) -> AppResult<()> {
-        let temp_output_path = output_path.with_extension("tmp");
-        let mut writer = BufWriter::new(File::create(&temp_output_path)?);
-        for i in 0..num_segments {
-            let ts_path = temp_dir.join(format!("{:05}.ts", i));
-            if !ts_path.exists() {
-                let filename = ts_path
-                    .file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "未知分片".to_string());
-                return Err(AppError::Merge(format!("丢失视频分片: {}", filename)));
+        // 在最终输出目录的同级目录下创建一个具名临时文件
+        let output_parent = output_path.parent().unwrap_or_else(|| Path::new("."));
+        let mut temp_file = NamedTempFile::new_in(output_parent)?;
+
+        {
+            let mut writer = BufWriter::new(&mut temp_file); // 借用现在只在这个块内有效
+            for i in 0..num_segments {
+                let ts_path = temp_dir.join(format!("{:05}.ts", i));
+                if !ts_path.exists() {
+                    let filename = ts_path
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "未知分片".to_string());
+                    return Err(AppError::Merge(format!("丢失视频分片: {}", filename)));
+                }
+                let mut reader = File::open(ts_path)?;
+                io::copy(&mut reader, &mut writer)?;
             }
-            let mut reader = File::open(ts_path)?;
-            io::copy(&mut reader, &mut writer)?;
-        }
-        writer.flush()?;
-        fs::rename(temp_output_path, output_path)?;
+            writer.flush()?;
+        } // writer 在这里被 drop，对 temp_file 的借用结束 ---
+
+        // 现在可以安全地移动 temp_file 了
+        temp_file.persist(output_path)?;
+
         Ok(())
     }
 

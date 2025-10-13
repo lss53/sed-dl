@@ -182,6 +182,56 @@ impl ResourceDownloader {
         Self { context }
     }
 
+    fn setup_progress_bar(tasks: &[FileInfo], max_workers: usize) -> ProgressBar {
+        // 将这里的 all_sizes_available 强制设为 false 来测试回退样式
+        // let all_sizes_available = false;
+        let all_sizes_available = tasks
+            .iter()
+            .all(|t| t.ti_size.is_some() && t.ti_size.unwrap() > 0);
+        
+        let pbar: ProgressBar;
+
+        if all_sizes_available {
+            let total_size: u64 = tasks.iter().map(|t| t.ti_size.unwrap_or(0)).sum();
+            println!(
+                "\n{} 开始下载 {} 个文件 (总大小: {}) (并发数: {})...",
+                *symbols::INFO,
+                tasks.len(),
+                HumanBytes(total_size),
+                max_workers
+            );
+
+            pbar = ProgressBar::new(total_size);
+            let pbar_style = ProgressStyle::with_template(
+                "{prefix:4.cyan.bold}: [{elapsed_precise}] [{bar:40.green/white.dim}] {percent:>3}% | {bytes:>10}/{total_bytes:<10} | {bytes_per_sec:<10} | ETA: {eta_precise}"
+            )
+            .unwrap()
+            .progress_chars("━╸ ");
+            pbar.set_style(pbar_style);
+            pbar.set_prefix("下载");
+        } else {
+            println!(
+                "\n{} 部分文件大小未知，将按文件数量显示进度。",
+                *symbols::WARN
+            );
+            println!(
+                "{} 开始下载 {} 个文件 (并发数: {})...",
+                *symbols::INFO,
+                tasks.len(),
+                max_workers
+            );
+
+            pbar = ProgressBar::new(tasks.len() as u64);
+            let pbar_style = ProgressStyle::with_template(
+                "{prefix:4.yellow.bold}: [{elapsed_precise}] [{bar:40.yellow/white.dim}] {pos}/{len} ({percent}%) ETA: {eta}"
+            ).unwrap().progress_chars("#>-");
+            pbar.set_style(pbar_style);
+            pbar.set_prefix("任务");
+        }
+        
+        pbar
+    }
+
     pub async fn run(&self, url: &str) -> AppResult<bool> {
         info!("开始处理 URL: {}", url);
         let (extractor, resource_id) = self.get_extractor_info(url)?;
@@ -465,53 +515,14 @@ impl ResourceDownloader {
             return Ok(());
         }
 
-        // 将这里的 all_sizes_available 强制设为 false 来测试回退样式
-        // let all_sizes_available = false;
+        // --- 调用新函数来创建和配置进度条 ---
+        let main_pbar = Self::setup_progress_bar(tasks, max_workers);
+        
+        // --- 确定后续是否使用字节进度 ---
+        // 注意：这里的 all_sizes_available 变量在函数局部仍然需要，用于后续的逻辑判断
         let all_sizes_available = tasks
             .iter()
             .all(|t| t.ti_size.is_some() && t.ti_size.unwrap() > 0);
-        let tasks_count = tasks.len() as u64;
-
-        let main_pbar: ProgressBar;
-
-        if all_sizes_available {
-            let total_size: u64 = tasks.iter().map(|t| t.ti_size.unwrap_or(0)).sum();
-            println!(
-                "\n{} 开始下载 {} 个文件 (总大小: {}) (并发数: {})...",
-                *symbols::INFO,
-                tasks.len(),
-                HumanBytes(total_size),
-                max_workers
-            );
-
-            main_pbar = ProgressBar::new(total_size);
-            let pbar_style = ProgressStyle::with_template(
-                "{prefix:4.cyan.bold}: [{elapsed_precise}] [{bar:40.green/white.dim}] {percent:>3}% | {bytes:>10}/{total_bytes:<10} | {bytes_per_sec:<10} | ETA: {eta_precise}"
-            )
-            .unwrap()
-            .progress_chars("━╸ ");
-            // .progress_chars("##-");
-            main_pbar.set_style(pbar_style);
-            main_pbar.set_prefix("下载");
-        } else {
-            println!(
-                "\n{} 部分文件大小未知，将按文件数量显示进度。",
-                *symbols::WARN
-            );
-            println!(
-                "{} 开始下载 {} 个文件 (并发数: {})...",
-                *symbols::INFO,
-                tasks.len(),
-                max_workers
-            );
-
-            main_pbar = ProgressBar::new(tasks_count);
-            let pbar_style = ProgressStyle::with_template(
-                "{prefix:4.yellow.bold}: [{elapsed_precise}] [{bar:40.yellow/white.dim}] {pos}/{len} ({percent}%) ETA: {eta}"
-            ).unwrap().progress_chars("#>-");
-            main_pbar.set_style(pbar_style);
-            main_pbar.set_prefix("任务");
-        }
 
         main_pbar.enable_steady_tick(Duration::from_millis(100));
 
@@ -520,97 +531,13 @@ impl ResourceDownloader {
 
         tasks_stream
             .for_each_concurrent(max_workers, |task| {
-                let context = self.context.clone();
-                let main_pbar = main_pbar.clone();
-                let error_sender = error_sender.clone();
-
-                async move {
-                    if context.cancellation_token.load(Ordering::Relaxed) {
-                        return;
-                    }
-                    if error_sender.lock().await.is_some() {
-                        return;
-                    }
-
-                    let result = Self::process_single_task(
-                        task.clone(),
-                        context.clone(),
-                        main_pbar.clone(),
-                        all_sizes_available,
-                    )
-                    .await;
-
-                    match result {
-                        Ok(result) => {
-                            match result.status {
-                                DownloadStatus::Success | DownloadStatus::Resumed => {
-                                    context.manager.record_success()
-                                }
-                                DownloadStatus::Skipped => context.manager.record_skip(
-                                    &result.filename,
-                                    result.message.as_deref().unwrap_or("文件已存在"),
-                                ),
-                                _ => context
-                                    .manager
-                                    .record_failure(&result.filename, result.status),
-                            }
-
-                            match result.status {
-                                DownloadStatus::Skipped => {
-                                    if all_sizes_available {
-                                        if let Some(skipped_size) = task.ti_size {
-                                            main_pbar.inc(skipped_size);
-                                        }
-                                    } else {
-                                        main_pbar.inc(1);
-                                    }
-                                }
-                                _ => {
-                                    if !all_sizes_available {
-                                        main_pbar.inc(1);
-                                    }
-                                }
-                            }
-
-                            if result.status != DownloadStatus::Skipped {
-                                let (symbol, color_fn, default_msg) =
-                                    result.status.get_display_info();
-                                let task_name =
-                                    task.filepath.file_name().unwrap().to_string_lossy();
-                                let msg = if let Some(err_msg) = result.message {
-                                    let error_details =
-                                        format!("失败: {} (详情: {})", default_msg, err_msg);
-                                    format!(
-                                        "\n{} {} {}",
-                                        symbol,
-                                        task_name,
-                                        color_fn(error_details.into())
-                                    )
-                                } else {
-                                    format!("{} {}", symbol, task_name)
-                                };
-                                main_pbar.println(msg);
-                            }
-                        }
-                        Err(e @ AppError::TokenInvalid) => {
-                            let mut error_lock = error_sender.lock().await;
-                            if error_lock.is_none() {
-                                let task_name = task.filepath.to_string_lossy();
-                                error!("任务 '{}' 因 Token 失效失败，将中止整个批次。", task_name);
-                                context
-                                    .manager
-                                    .record_failure(&task_name, DownloadStatus::TokenError);
-                                *error_lock = Some(e);
-                            }
-                        }
-                        Err(e) => {
-                            error!("未捕获的错误在并发循环中: {}", e);
-                            if !all_sizes_available {
-                                main_pbar.inc(1);
-                            }
-                        }
-                    }
-                }
+                Self::run_single_concurrent_task(
+                    task,
+                    self.context.clone(),
+                    main_pbar.clone(),
+                    error_sender.clone(),
+                    all_sizes_available, // 在原函数中这个变量名为 all_sizes_available
+                )
             })
             .await;
 
@@ -624,6 +551,100 @@ impl ResourceDownloader {
             return Err(err);
         }
         Ok(())
+    }
+
+    async fn run_single_concurrent_task(
+        task: FileInfo,
+        context: DownloadJobContext,
+        main_pbar: ProgressBar,
+        error_sender: Arc<tokio::sync::Mutex<Option<AppError>>>,
+        use_byte_progress: bool,
+    ) {
+        if context.cancellation_token.load(Ordering::Relaxed) {
+            return;
+        }
+        if error_sender.lock().await.is_some() {
+            return;
+        }
+
+        let result = Self::process_single_task(
+            task.clone(),
+            context.clone(),
+            main_pbar.clone(),
+            use_byte_progress,
+        )
+        .await;
+
+        match result {
+            Ok(result) => {
+                match result.status {
+                    DownloadStatus::Success | DownloadStatus::Resumed => {
+                        context.manager.record_success()
+                    }
+                    DownloadStatus::Skipped => context.manager.record_skip(
+                        &result.filename,
+                        result.message.as_deref().unwrap_or("文件已存在"),
+                    ),
+                    _ => context
+                        .manager
+                        .record_failure(&result.filename, result.status),
+                }
+
+                match result.status {
+                    DownloadStatus::Skipped => {
+                        if use_byte_progress {
+                            if let Some(skipped_size) = task.ti_size {
+                                main_pbar.inc(skipped_size);
+                            }
+                        } else {
+                            main_pbar.inc(1);
+                        }
+                    }
+                    _ => {
+                        if !use_byte_progress {
+                            main_pbar.inc(1);
+                        }
+                    }
+                }
+
+                if result.status != DownloadStatus::Skipped {
+                    let (symbol, color_fn, default_msg) =
+                        result.status.get_display_info();
+                    let task_name =
+                        task.filepath.file_name().unwrap().to_string_lossy();
+                    let msg = if let Some(err_msg) = result.message {
+                        let error_details =
+                            format!("失败: {} (详情: {})", default_msg, err_msg);
+                        format!(
+                            "\n{} {} {}",
+                            symbol,
+                            task_name,
+                            color_fn(error_details.into())
+                        )
+                    } else {
+                        format!("{} {}", symbol, task_name)
+                    };
+                    main_pbar.println(msg);
+                }
+            }
+            Err(e @ AppError::TokenInvalid) => {
+                let mut error_lock = error_sender.lock().await;
+                if error_lock.is_none() {
+                    let task_name = task.filepath.to_string_lossy();
+                    error!("任务 '{}' 因 Token 失效失败，将中止整个批次。", task_name);
+                    context
+                        .manager
+                        .record_failure(&task_name, DownloadStatus::TokenError);
+                    *error_lock = Some(e);
+                }
+            }
+            Err(e) => {
+                error!("未捕获的错误在并发循环中: {}", e);
+                if !use_byte_progress {
+                    main_pbar.inc(1);
+                }
+            }
+        }
     }
 
     async fn process_single_task(

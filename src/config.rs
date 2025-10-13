@@ -23,10 +23,20 @@ pub struct ApiEndpointConfigFromFile {
     pub url_template_keys: HashMap<String, String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NetworkConfig {
+    pub server_prefixes: Option<Vec<String>>,
+    pub connect_timeout_secs: Option<u64>,
+    pub timeout_secs: Option<u64>,
+    pub max_retries: Option<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accesstoken: Option<String>,
+    #[serde(default)] // 这是个好习惯，可以防止手动删除配置项导致解析失败
+    pub network: NetworkConfig,
     pub url_templates: HashMap<String, String>,
     pub api_endpoints: HashMap<String, ApiEndpointConfigFromFile>,
 }
@@ -73,6 +83,7 @@ impl ExternalConfig {
 
         Self {
             accesstoken: None,
+            network: NetworkConfig::default(), // 使用 NetworkConfig 的默认空值
             url_templates,
             api_endpoints,
         }
@@ -144,11 +155,12 @@ impl AppConfig {
         Ok(Self {
             max_workers: args.workers.unwrap_or(5),
             default_audio_format: args.audio_format.clone(),
-            server_prefixes: vec!["s-file-1".into(), "s-file-2".into(), "s-file-3".into()],
+            server_prefixes: external_config.network.server_prefixes
+                .unwrap_or_else(|| vec!["s-file-1".into(), "s-file-2".into(), "s-file-3".into()]),
             user_agent: constants::USER_AGENT.into(),
-            connect_timeout: Duration::from_secs(5),
-            timeout: Duration::from_secs(15),
-            max_retries: 3,
+            connect_timeout: Duration::from_secs(external_config.network.connect_timeout_secs.unwrap_or(5)),
+            timeout: Duration::from_secs(external_config.network.timeout_secs.unwrap_or(15)),
+            max_retries: external_config.network.max_retries.unwrap_or(3),
             api_endpoints,
             url_templates: external_config.url_templates,
         })
