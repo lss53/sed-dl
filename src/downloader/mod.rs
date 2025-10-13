@@ -531,97 +531,13 @@ impl ResourceDownloader {
 
         tasks_stream
             .for_each_concurrent(max_workers, |task| {
-                let context = self.context.clone();
-                let main_pbar = main_pbar.clone();
-                let error_sender = error_sender.clone();
-
-                async move {
-                    if context.cancellation_token.load(Ordering::Relaxed) {
-                        return;
-                    }
-                    if error_sender.lock().await.is_some() {
-                        return;
-                    }
-
-                    let result = Self::process_single_task(
-                        task.clone(),
-                        context.clone(),
-                        main_pbar.clone(),
-                        all_sizes_available,
-                    )
-                    .await;
-
-                    match result {
-                        Ok(result) => {
-                            match result.status {
-                                DownloadStatus::Success | DownloadStatus::Resumed => {
-                                    context.manager.record_success()
-                                }
-                                DownloadStatus::Skipped => context.manager.record_skip(
-                                    &result.filename,
-                                    result.message.as_deref().unwrap_or("文件已存在"),
-                                ),
-                                _ => context
-                                    .manager
-                                    .record_failure(&result.filename, result.status),
-                            }
-
-                            match result.status {
-                                DownloadStatus::Skipped => {
-                                    if all_sizes_available {
-                                        if let Some(skipped_size) = task.ti_size {
-                                            main_pbar.inc(skipped_size);
-                                        }
-                                    } else {
-                                        main_pbar.inc(1);
-                                    }
-                                }
-                                _ => {
-                                    if !all_sizes_available {
-                                        main_pbar.inc(1);
-                                    }
-                                }
-                            }
-
-                            if result.status != DownloadStatus::Skipped {
-                                let (symbol, color_fn, default_msg) =
-                                    result.status.get_display_info();
-                                let task_name =
-                                    task.filepath.file_name().unwrap().to_string_lossy();
-                                let msg = if let Some(err_msg) = result.message {
-                                    let error_details =
-                                        format!("失败: {} (详情: {})", default_msg, err_msg);
-                                    format!(
-                                        "\n{} {} {}",
-                                        symbol,
-                                        task_name,
-                                        color_fn(error_details.into())
-                                    )
-                                } else {
-                                    format!("{} {}", symbol, task_name)
-                                };
-                                main_pbar.println(msg);
-                            }
-                        }
-                        Err(e @ AppError::TokenInvalid) => {
-                            let mut error_lock = error_sender.lock().await;
-                            if error_lock.is_none() {
-                                let task_name = task.filepath.to_string_lossy();
-                                error!("任务 '{}' 因 Token 失效失败，将中止整个批次。", task_name);
-                                context
-                                    .manager
-                                    .record_failure(&task_name, DownloadStatus::TokenError);
-                                *error_lock = Some(e);
-                            }
-                        }
-                        Err(e) => {
-                            error!("未捕获的错误在并发循环中: {}", e);
-                            if !all_sizes_available {
-                                main_pbar.inc(1);
-                            }
-                        }
-                    }
-                }
+                Self::run_single_concurrent_task(
+                    task,
+                    self.context.clone(),
+                    main_pbar.clone(),
+                    error_sender.clone(),
+                    all_sizes_available, // 在原函数中这个变量名为 all_sizes_available
+                )
             })
             .await;
 
@@ -635,6 +551,100 @@ impl ResourceDownloader {
             return Err(err);
         }
         Ok(())
+    }
+
+    async fn run_single_concurrent_task(
+        task: FileInfo,
+        context: DownloadJobContext,
+        main_pbar: ProgressBar,
+        error_sender: Arc<tokio::sync::Mutex<Option<AppError>>>,
+        use_byte_progress: bool,
+    ) {
+        if context.cancellation_token.load(Ordering::Relaxed) {
+            return;
+        }
+        if error_sender.lock().await.is_some() {
+            return;
+        }
+
+        let result = Self::process_single_task(
+            task.clone(),
+            context.clone(),
+            main_pbar.clone(),
+            use_byte_progress,
+        )
+        .await;
+
+        match result {
+            Ok(result) => {
+                match result.status {
+                    DownloadStatus::Success | DownloadStatus::Resumed => {
+                        context.manager.record_success()
+                    }
+                    DownloadStatus::Skipped => context.manager.record_skip(
+                        &result.filename,
+                        result.message.as_deref().unwrap_or("文件已存在"),
+                    ),
+                    _ => context
+                        .manager
+                        .record_failure(&result.filename, result.status),
+                }
+
+                match result.status {
+                    DownloadStatus::Skipped => {
+                        if use_byte_progress {
+                            if let Some(skipped_size) = task.ti_size {
+                                main_pbar.inc(skipped_size);
+                            }
+                        } else {
+                            main_pbar.inc(1);
+                        }
+                    }
+                    _ => {
+                        if !use_byte_progress {
+                            main_pbar.inc(1);
+                        }
+                    }
+                }
+
+                if result.status != DownloadStatus::Skipped {
+                    let (symbol, color_fn, default_msg) =
+                        result.status.get_display_info();
+                    let task_name =
+                        task.filepath.file_name().unwrap().to_string_lossy();
+                    let msg = if let Some(err_msg) = result.message {
+                        let error_details =
+                            format!("失败: {} (详情: {})", default_msg, err_msg);
+                        format!(
+                            "\n{} {} {}",
+                            symbol,
+                            task_name,
+                            color_fn(error_details.into())
+                        )
+                    } else {
+                        format!("{} {}", symbol, task_name)
+                    };
+                    main_pbar.println(msg);
+                }
+            }
+            Err(e @ AppError::TokenInvalid) => {
+                let mut error_lock = error_sender.lock().await;
+                if error_lock.is_none() {
+                    let task_name = task.filepath.to_string_lossy();
+                    error!("任务 '{}' 因 Token 失效失败，将中止整个批次。", task_name);
+                    context
+                        .manager
+                        .record_failure(&task_name, DownloadStatus::TokenError);
+                    *error_lock = Some(e);
+                }
+            }
+            Err(e) => {
+                error!("未捕获的错误在并发循环中: {}", e);
+                if !use_byte_progress {
+                    main_pbar.inc(1);
+                }
+            }
+        }
     }
 
     async fn process_single_task(
