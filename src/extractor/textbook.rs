@@ -126,7 +126,8 @@ impl TextbookExtractor {
         textbook_basename: Option<String>,
         context: &DownloadJobContext,
     ) -> AppResult<Vec<FileInfo>> {
-        let url_template = self.config.url_templates.get("TEXTBOOK_AUDIO").unwrap();
+        let url_template = self.config.url_templates.get("TEXTBOOK_AUDIO")
+            .expect("配置文件中缺少必需的 'TEXTBOOK_AUDIO' URL 模板");
         let audio_items: Vec<AudioRelationItem> = self
             .http_client
             .fetch_json(url_template, &[("resource_id", resource_id)])
@@ -294,7 +295,8 @@ impl ResourceExtractor for TextbookExtractor {
         context: &DownloadJobContext,
     ) -> AppResult<Vec<FileInfo>> {
         info!("开始提取教材资源, ID: {}", resource_id);
-        let url_template = self.config.url_templates.get("TEXTBOOK_DETAILS").unwrap();
+        let url_template = self.config.url_templates.get("TEXTBOOK_DETAILS")
+            .expect("配置文件中缺少必需的 'TEXTBOOK_DETAILS' URL 模板");
         let data: TextbookDetailsResponse = self
             .http_client
             .fetch_json(url_template, &[("resource_id", resource_id)])
