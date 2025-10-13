@@ -361,20 +361,23 @@ impl ResourceDownloader {
             
             main_pbar = ProgressBar::new(total_size);
             let pbar_style = ProgressStyle::with_template(
-                "[{elapsed_precise}] [{bar:40.green/white.dim}] {percent:>3}% |{bytes_per_sec:^12}|{bytes:>11}/{total_bytes:<11}| ETA: {eta_precise}"
+                "{prefix:4.cyan.bold}: [{elapsed_precise}] [{bar:40.green/white.dim}] {percent:>3}% | {bytes:>10}/{total_bytes:<10} | {bytes_per_sec:<10} | ETA: {eta_precise}"
             )
             .unwrap()
-            .progress_chars("##-");
+            .progress_chars("━╸ ");
+            // .progress_chars("##-");
             main_pbar.set_style(pbar_style);
+            main_pbar.set_prefix("下载");
         } else {
             println!("\n{} 部分文件大小未知，将按文件数量显示进度。", *symbols::WARN);
             println!("{} 开始下载 {} 个文件 (并发数: {})...", *symbols::INFO, tasks.len(), max_workers);
 
             main_pbar = ProgressBar::new(tasks_count);
             let pbar_style = ProgressStyle::with_template(
-                "[{elapsed_precise}] [{bar:40.yellow/white.dim}] {pos}/{len} ({percent}%) [ETA: {eta}]"
+                "{prefix:4.yellow.bold}: [{elapsed_precise}] [{bar:40.yellow/white.dim}] {pos}/{len} ({percent}%) ETA: {eta}"
             ).unwrap().progress_chars("#>-");
             main_pbar.set_style(pbar_style);
+            main_pbar.set_prefix("任务");
         }
 
         main_pbar.enable_steady_tick(Duration::from_millis(100));
