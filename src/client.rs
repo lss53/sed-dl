@@ -53,29 +53,25 @@ impl RobustClient {
         // `send()` 的错误现在主要是网络层面的
         let res = self.client.get(url_str).send().await?;
 
-        let status = res.status();
-
-        // 手动检查 HTTP 状态码
-        if status.is_success() {
-            // 2xx 状态码，请求成功
-            Ok(res)
-        } else {
-            // 4xx 或 5xx 状态码，请求失败
-            warn!(
-                "HTTP request to {} resulted in status code: {}",
-                res.url(),
-                status
-            );
-
-            // 专门处理认证失败的情况
-            if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-                warn!("Status code indicates invalid token.");
+        match res.status() {
+            s if s.is_success() => Ok(res),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+                warn!(
+                    "向 {} 的 HTTP 请求返回状态码: {}。这表明 Token 无效。",
+                    res.url(),
+                    res.status()
+                );
                 Err(AppError::TokenInvalid)
-            } else {
-                // 对于其他错误，我们使用 error_for_status() 来生成一个包含上下文的 reqwest::Error
-                // .unwrap_err() 在这里是安全的，因为我们已经知道 status 不是成功状态
-                let err = res.error_for_status().unwrap_err();
-                Err(AppError::Network(err))
+            }
+            s => {
+                warn!(
+                    "向 {} 的 HTTP 请求返回状态码: {}",
+                    res.url(),
+                    s
+                );
+                // error_for_status() 会根据状态码生成一个合适的 reqwest::Error
+                // .into() 会自动将其转换为 AppError::Network
+                Err(res.error_for_status().unwrap_err().into())
             }
         }
     }

@@ -240,5 +240,5 @@ async fn process_single_task_cli(task_input: &str, context: DownloadJobContext) 
         return Ok(()); // 无效条目不是一个错误，直接返回成功
     };
 
-    result.map(|_| ()) // 将 Result<bool, _> 转换为 Result<(), _>
+    result.map(drop) // 如果成功，丢弃bool值，返回()
 }
