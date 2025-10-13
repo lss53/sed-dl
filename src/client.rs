@@ -47,11 +47,11 @@ impl RobustClient {
 
     // ## 修改点 2: 重构 get 方法以适应 reqwest 0.12 的错误处理 ##
     pub async fn get<T: IntoUrl>(&self, url: T) -> AppResult<Response> {
-        let url_str = url.as_str().to_owned();
-        debug!("HTTP GET: {}", url_str);
+        let url_ref = url.as_str();
+        debug!("HTTP GET: {}", url_ref);
 
         // `send()` 的错误现在主要是网络层面的
-        let res = self.client.get(url_str).send().await?;
+        let res = self.client.get(url_ref).send().await?;
 
         match res.status() {
             s if s.is_success() => Ok(res),
