@@ -64,3 +64,7 @@ strip = true
 [[bin]]
 name = "sed-dl"
 path = "src/main.rs"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+mockito = "1.3.0"
