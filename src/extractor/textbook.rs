@@ -20,9 +20,22 @@ use regex::Regex;
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
 use url::Url;
+
+static TEMPLATE_TAGS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+    [
+        ("zxxxd", "未知学段"),
+        ("zxxnj", "未知年级"),
+        ("zxxxk", "未知学科"),
+        ("zxxbb", "未知版本"),
+        ("zxxcc", "未知册"),
+    ]
+    .iter()
+    .cloned()
+    .collect()
+});
 
 pub struct TextbookExtractor {
     http_client: Arc<RobustClient>,
@@ -241,18 +254,8 @@ impl TextbookExtractor {
     }
 
     pub(super) fn build_resource_path(&self, tag_list_val: Option<&[Tag]>) -> PathBuf {
-        let template: HashMap<&str, &str> = [
-            ("zxxxd", "未知学段"),
-            ("zxxnj", "未知年级"),
-            ("zxxxk", "未知学科"),
-            ("zxxbb", "未知版本"),
-            ("zxxcc", "未知册"),
-        ]
-        .iter()
-        .cloned()
-        .collect();
-
-        let mut path_map = template.clone();
+        // 使用静态的 LazyLock 变量
+        let mut path_map = TEMPLATE_TAGS.clone();
 
         if let Some(tags) = tag_list_val {
             for tag in tags {
@@ -264,7 +267,7 @@ impl TextbookExtractor {
             }
         }
 
-        let default_values: HashSet<&str> = template.values().cloned().collect();
+        let default_values: HashSet<&str> = TEMPLATE_TAGS.values().cloned().collect();
         let components: Vec<String> = ["zxxxd", "zxxnj", "zxxxk", "zxxbb", "zxxcc"]
             .iter()
             .filter_map(|&key| path_map.get(key))
