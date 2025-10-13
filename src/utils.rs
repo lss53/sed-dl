@@ -130,3 +130,59 @@ pub fn secure_join_path(base_dir: &Path, relative_path: &Path) -> AppResult<Path
     }
     Ok(final_path)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_selection_indices() {
+        // 测试基本情况
+        assert_eq!(parse_selection_indices("1,3,5", 5), vec![0, 2, 4]);
+        
+        // 测试范围
+        assert_eq!(parse_selection_indices("2-4", 5), vec![1, 2, 3]);
+
+        // 测试 "all" 关键字 (大小写不敏感)
+        assert_eq!(parse_selection_indices("all", 3), vec![0, 1, 2]);
+        assert_eq!(parse_selection_indices("All", 3), vec![0, 1, 2]);
+
+        // 测试混合、乱序和重复
+        assert_eq!(parse_selection_indices("5, 1-2, 1", 5), vec![0, 1, 4]);
+
+        // 测试无效和越界输入
+        assert_eq!(parse_selection_indices("1,10,foo,-2", 5), vec![0]);
+
+        // 测试空输入
+        assert_eq!(parse_selection_indices("", 5), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn test_sanitize_filename() {
+        // 测试非法字符
+        assert_eq!(sanitize_filename("a\\b/c:d*e?f\"g<h>i|j"), "a b c d e f g h i j".to_string());
+
+        // 测试首尾空格和点
+        assert_eq!(sanitize_filename(" . my file. "), "my file".to_string());
+
+        // 测试多个连续空格
+        assert_eq!(sanitize_filename("a  b   c"), "a b c".to_string());
+
+        // 测试 Windows 保留字 (大小写不敏感)
+        assert_eq!(sanitize_filename("CON.txt"), "_CON.txt".to_string());
+        assert_eq!(sanitize_filename("aux"), "_aux".to_string());
+
+        // 测试空或只有非法字符的输入
+        assert_eq!(sanitize_filename(""), "unknown".to_string());
+        assert_eq!(sanitize_filename("<>|"), "unnamed".to_string());
+
+        // 测试文件名截断 (确保不破坏UTF-8和扩展名)
+        // 假设 MAX_FILENAME_BYTES = 20
+        let very_long_name = "这是一个非常长的文件名.txt"; // 46 bytes
+        let truncated = sanitize_filename(very_long_name);
+        // "这是一个非.txt" -> 12 (4*3) + 1 + 3 = 16 bytes
+        assert!(truncated.as_bytes().len() <= constants::MAX_FILENAME_BYTES);
+        assert!(truncated.ends_with(".txt"));
+    }
+}
