@@ -72,7 +72,7 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
         return Ok(());
     }
 
-    let config = Arc::new(AppConfig::from_args(&args));
+    let config = Arc::new(AppConfig::new(&args)?);
     debug!("加载的应用配置: {:?}", config);
 
     validate_cli_args(&args)?;
