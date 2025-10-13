@@ -1,7 +1,7 @@
 // src/cli.rs
 
 use crate::constants;
-use clap::{command, Parser, ValueEnum};
+use clap::{command, crate_version, Parser, ValueEnum}; 
 use std::path::PathBuf;
 
 /// 定义日志输出级别
@@ -17,6 +17,7 @@ pub enum LogLevel {
 
 #[derive(Parser, Debug, Clone)]
 #[command(
+    version = crate_version!(),
     about,
     long_about = None,
     arg_required_else_help = true,
