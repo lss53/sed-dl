@@ -43,23 +43,13 @@ pub struct DownloadJobContext {
 
 
 /// 验证命令行参数的组合是否有效
-fn validate_cli_args(args: &Cli, config: &AppConfig) -> AppResult<()> {
+fn validate_cli_args(args: &Cli) -> AppResult<()> { 
     if (args.id.is_some() || args.batch_file.is_some()) && args.r#type.is_none() {
         return Err(AppError::Other(anyhow!(
             "使用 --id 或 --batch-file 时，必须提供 --type 参数。"
         )));
     }
 
-    if let Some(t) = &args.r#type {
-        if !config.api_endpoints.contains_key(t) {
-            let valid_options = config.api_endpoints.keys().cloned().collect::<Vec<_>>().join(", ");
-            return Err(AppError::Other(anyhow!(
-                "无效的资源类型 '{}'。有效选项: {}",
-                t,
-                valid_options
-            )));
-        }
-    }
     Ok(())
 }
 
@@ -85,7 +75,7 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
     let config = Arc::new(AppConfig::from_args(&args));
     debug!("加载的应用配置: {:?}", config);
 
-    validate_cli_args(&args, &config)?;
+    validate_cli_args(&args)?;
 
     let (token_opt, source) = config::resolve_token(args.token.as_deref());
     if token_opt.is_some() {

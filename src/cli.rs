@@ -15,6 +15,18 @@ pub enum LogLevel {
     Trace,
 }
 
+/// 定义可下载的资源类型
+#[derive(ValueEnum, Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ResourceType {
+    #[value(name = "tchMaterial")]
+    TchMaterial,
+    #[value(name = "qualityCourse")]
+    QualityCourse,
+    #[value(name = "syncClassroom/classActivity")]
+    SyncClassroom,
+}
+
+// command 属性
 #[derive(Parser, Debug, Clone)]
 #[command(
     version = crate_version!(),
@@ -53,8 +65,8 @@ pub struct Cli {
     pub select: String,
     /// [ID模式] 指定资源类型
     /// 有效选项: tchMaterial, qualityCourse, syncClassroom/classActivity
-    #[arg(long, help_heading = "Options")]
-    pub r#type: Option<String>,
+    #[arg(long, value_enum, help_heading = "Options")] // 将类型改为 value_enum
+    pub r#type: Option<ResourceType>, // 将类型从 String 改为 ResourceType
     /// 提供访问令牌 (Access Token)，优先级最高
     #[arg(long, help_heading = "Options")]
     pub token: Option<String>,
@@ -80,10 +92,10 @@ pub struct Cli {
     // --- 通用选项 (General) ---
     /// 显示此帮助信息并退出
     #[arg(short = 'h', long, action = clap::ArgAction::Help, global = true, help_heading = "General")]
-    help: Option<bool>,
+    _help: Option<bool>,
     /// 显示版本信息并退出
     #[arg(short = 'V', long, action = clap::ArgAction::Version, global = true, help_heading = "General")]
-    version: Option<bool>,
+    _version: Option<bool>,
     /// (隐藏参数) 设置日志文件的输出级别，用于调试
     #[arg(long, value_enum, default_value_t = LogLevel::Off, global = true, hide = true)]
     pub log_level: LogLevel,

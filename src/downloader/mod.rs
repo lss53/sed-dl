@@ -4,7 +4,7 @@ mod m3u8;
 
 use self::m3u8::M3u8Downloader;
 use crate::{
-    cli::Cli,
+    cli::{Cli, ResourceType},
     config::{self, ResourceExtractorType},
     constants,
     error::*,
@@ -71,7 +71,7 @@ impl DownloadManager {
     pub fn record_failure(&self, filename: &str, status: DownloadStatus) {
         error!("文件 '{}' 下载失败，状态: {:?}", filename, status);
         self.stats.lock().unwrap().failed += 1;
-        let (_, _, msg) = get_status_display_info(status);
+        let (_, _, msg) = status.get_display_info();
         self.failed_downloads.lock().unwrap().push((filename.to_string(), msg.to_string()));
     }
     pub fn reset_token_failures(&self, filenames_to_reset: &[String]) {
@@ -131,26 +131,6 @@ impl DownloadManager {
     }
 }
 
-pub fn get_status_display_info(status: DownloadStatus) -> (&'static ColoredString, fn(ColoredString) -> ColoredString, &'static str) {
-    match status {
-        DownloadStatus::Success => (&symbols::OK, |s| s.green(), "下载并校验成功"),
-        DownloadStatus::Resumed => (&symbols::OK, |s| s.green(), "续传成功，文件有效"),
-        DownloadStatus::Skipped => (&symbols::INFO, |s| s.cyan(), "文件已存在，跳过"),
-        DownloadStatus::Md5Failed => (&symbols::ERROR, |s| s.red(), "校验失败 (MD5不匹配)"),
-        DownloadStatus::SizeFailed => (&symbols::ERROR, |s| s.red(), "校验失败 (大小不匹配)"),
-        DownloadStatus::HttpError => (&symbols::ERROR, |s| s.red(), "服务器返回错误"),
-        DownloadStatus::NetworkError => (&symbols::ERROR, |s| s.red(), "网络请求失败"),
-        DownloadStatus::ConnectionError => (&symbols::ERROR, |s| s.red(), "无法建立连接"),
-        DownloadStatus::TimeoutError => (&symbols::WARN, |s| s.yellow(), "网络连接超时"),
-        DownloadStatus::MergeError => (&symbols::ERROR, |s| s.red(), "视频分片合并失败"),
-        DownloadStatus::KeyError => (&symbols::ERROR, |s| s.red(), "视频解密密钥获取失败"),
-        DownloadStatus::TokenError => (&symbols::ERROR, |s| s.red(), "认证失败 (Token无效)"),
-        DownloadStatus::IoError => (&symbols::ERROR, |s| s.red(), "本地文件读写错误"),
-        DownloadStatus::UnexpectedError => (&symbols::ERROR, |s| s.red(), "发生未预期的程序错误"),
-    }
-}
-
-
 #[derive(Debug, PartialEq, Eq)]
 enum ValidationStatus {
     Valid,
@@ -176,8 +156,16 @@ impl ResourceDownloader {
 
     pub async fn run_with_id(&self, resource_id: &str) -> AppResult<bool> {
         info!("开始处理 ID: {}", resource_id);
-        let r#type = self.context.args.r#type.as_ref().unwrap();
-        let api_conf = self.context.config.api_endpoints.get(r#type).unwrap();
+        let resource_type_enum = self.context.args.r#type.as_ref().unwrap(); // 这是 ResourceType 枚举
+        
+        // 将枚举转换为字符串 key
+        let type_key = match resource_type_enum {
+            ResourceType::TchMaterial => "tchMaterial",
+            ResourceType::QualityCourse => "qualityCourse",
+            ResourceType::SyncClassroom => "syncClassroom/classActivity",
+        };
+
+        let api_conf = self.context.config.api_endpoints.get(type_key).unwrap();
         let extractor = self.create_extractor(api_conf);
         self.prepare_and_run(extractor, resource_id).await
     }
@@ -422,7 +410,7 @@ impl ResourceDownloader {
                         }
                         
                         if result.status != DownloadStatus::Skipped {
-                             let (symbol, color_fn, default_msg) = get_status_display_info(result.status);
+                             let (symbol, color_fn, default_msg) = result.status.get_display_info();
                              let task_name = task.filepath.file_name().unwrap().to_string_lossy();
                              let msg = if let Some(err_msg) = result.message {
                                  let error_details = format!("失败: {} (详情: {})", default_msg, err_msg);
