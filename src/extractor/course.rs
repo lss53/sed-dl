@@ -82,7 +82,7 @@ impl CourseExtractor {
         {
             full_chapter_path
                 .parent()
-                .unwrap_or(&full_chapter_path)
+                .unwrap_or_else(|| Path::new("")) // 使用空路径作为备用
                 .to_path_buf()
         } else {
             full_chapter_path

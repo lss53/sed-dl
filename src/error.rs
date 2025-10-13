@@ -12,6 +12,8 @@ pub enum AppError {
     NetworkMiddleware(#[from] reqwest_middleware::Error),
     #[error("I/O 错误: {0}")]
     Io(#[from] std::io::Error),
+    #[error("临时文件持久化失败: {0}")]
+    TempFilePersist(#[from] tempfile::PersistError),
     #[error("JSON 解析错误: {0}")]
     Json(#[from] serde_json::Error),
     #[error("URL 解析错误: {0}")]
