@@ -1,0 +1,63 @@
+{
+  "global_title": { "zh-CN": "示例课程标题" },
+  "tag_list": [
+    { "tag_dimension_id": "zxxxd", "tag_name": "小学" },
+    { "tag_dimension_id": "zxxnj", "tag_name": "一年级" },
+    { "tag_dimension_id": "zxxxk", "tag_name": "语文" }
+  ],
+  "teacher_list": [{ "id": "teacher123", "name": "张老师" }],
+  "relations": {
+    "resources": [
+      {
+        "global_title": { "zh-CN": "第一节课视频" },
+        "custom_properties": { "alias_name": "课堂录像" },
+        "update_time": "2024-01-01T12:00:00+08:00",
+        "resource_type_code": "assets_video",
+        "ti_items": [
+          {
+            "ti_format": "m3u8",
+            "ti_storages": ["http://example.com/video_720p.m3u8"],
+            "custom_properties": {
+              "requirements": [
+                { "name": "Height", "value": "720" },
+                { "name": "total_size", "value": "12345678" }
+              ]
+            }
+          },
+          {
+            "ti_format": "m3u8",
+            "ti_storages": ["http://example.com/video_360p.m3u8"],
+            "custom_properties": {
+              "requirements": [{ "name": "Height", "value": "360" }]
+            }
+          }
+        ]
+      },
+      {
+        "global_title": { "zh-CN": "相关文档" },
+        "custom_properties": { "alias_name": "教学课件" },
+        "update_time": "2024-01-02T12:00:00+08:00",
+        "resource_type_code": "assets_document",
+        "ti_items": [
+          {
+            "ti_format": "pdf",
+            "ti_storages": ["http://example.com/document.pdf"],
+            "ti_md5": "d41d8cd98f00b204e9800998ecf8427e",
+            "ti_size": 102400
+          }
+        ]
+      }
+    ]
+  },
+  "resource_structure": {
+    "relations": [
+      {
+        "title": "主讲",
+        "res_ref": ["[*]"],
+        "custom_properties": { "teacher_ids": ["teacher123"] }
+      }
+    ]
+  },
+  "custom_properties": {},
+  "chapter_paths": []
+}
