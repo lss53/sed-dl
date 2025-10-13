@@ -50,10 +50,10 @@ pub struct Cli {
     #[arg(long, help_heading = "Mode")]
     pub url: Option<String>,
     /// 通过资源ID下载 (需配合 --type 使用)
-    #[arg(long, help_heading = "Mode")]
+    #[arg(long, help_heading = "Mode", requires = "type")]
     pub id: Option<String>,
     /// 从文本文件批量下载多个链接或ID (每行一个)
-    #[arg(short, long, value_name = "FILE", help_heading = "Mode")]
+    #[arg(short, long, value_name = "FILE", help_heading = "Mode", requires = "type")]
     pub batch_file: Option<PathBuf>,
     /// 显示如何获取 Access Token 的指南并退出
     #[arg(long, action = clap::ArgAction::SetTrue, help_heading = "Mode")]

@@ -41,17 +41,6 @@ pub struct DownloadJobContext {
     pub cancellation_token: Arc<AtomicBool>,
 }
 
-/// 验证命令行参数的组合是否有效
-fn validate_cli_args(args: &Cli) -> AppResult<()> {
-    if (args.id.is_some() || args.batch_file.is_some()) && args.r#type.is_none() {
-        return Err(AppError::Other(anyhow!(
-            "使用 --id 或 --batch-file 时，必须提供 --type 参数。"
-        )));
-    }
-
-    Ok(())
-}
-
 /// 库的公共入口点，由 `main.rs` 调用
 pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -> AppResult<()> {
     debug!("CLI 参数: {:?}", args);
@@ -73,8 +62,6 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
 
     let config = Arc::new(AppConfig::new(&args)?);
     debug!("加载的应用配置: {:?}", config);
-
-    validate_cli_args(&args)?;
 
     let (token_opt, source) = config::token::resolve_token(args.token.as_deref());
     if token_opt.is_some() {
@@ -120,12 +107,35 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
 
 async fn handle_interactive_mode(base_context: DownloadJobContext) -> AppResult<()> {
     ui::print_header("交互模式");
+    
+    let prompt_message: &str;
+    let help_message: &str;
+
+    if base_context.args.r#type.is_some() {
+        let type_name = match base_context.args.r#type.unwrap() {
+            crate::cli::ResourceType::TchMaterial => "教材 (tchMaterial)",
+            crate::cli::ResourceType::QualityCourse => "精品课 (qualityCourse)",
+            crate::cli::ResourceType::SyncClassroom => "同步课堂 (syncClassroom/classActivity)",
+        };
+        println!(
+            "你正处于针对 [{}] 类型的ID下载模式。",
+            type_name.yellow()
+        );
+        help_message = "在此模式下，你可以逐一输入ID进行下载。";
+        prompt_message = "请输入资源ID";
+    } else {
+        help_message = "在此模式下，你可以逐一输入链接进行下载。";
+        prompt_message = "请输入资源链接";
+    }
+    
     println!(
-        "在此模式下，你可以逐一输入链接进行下载。按 {} 可随时退出。",
+        "{}按 {} 可随时退出。",
+        help_message,
         *symbols::CTRL_C
     );
+
     loop {
-        match ui::prompt("请输入资源链接或ID", None) {
+        match ui::prompt(prompt_message, None) {
             Ok(input) if !input.is_empty() => {
                 let context = base_context.clone();
                 // 忽略单个任务的错误，以便继续交互模式
