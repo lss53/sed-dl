@@ -229,3 +229,41 @@ impl M3u8Downloader {
         Ok((Some(decrypted_key), iv, media))
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aes::cipher::{block_padding::Pkcs7, BlockDecryptMut};
+
+    #[test]
+    fn test_aes_cbc_decryption_logic() {
+        // --- Arrange ---
+        // !!! 警告: 以下是占位符数据。你需要用从真实网络请求中捕获的数据来替换它们 !!!
+        
+        // 一个已知的16字节 (128位) AES密钥 (以十六进制表示)
+        let hex_key = "32333538396135356464346134343933"; 
+        // 一个已知的16字节IV (以十六进制表示)
+        let hex_iv = "00000000000000000000000000000000";
+        // 一段已知的、用上述密钥和IV加密的数据 (通常是一个 .ts 分片的内容)
+        let hex_encrypted_data = "bc5c40cb8621101fc486c33ee9e13e85fa91be59351f74192939dd4f0dea23f7"; // 这里需要填入真实的加密数据
+        // 这段加密数据解密后应该得到的原始数据
+        let hex_expected_decrypted_data = "54686973206973206120746573742121"; // 这里需要填入对应的原始数据
+        
+        // 将十六进制字符串转换为字节数组
+        let key = hex::decode(hex_key).unwrap();
+        let iv = hex::decode(hex_iv).unwrap();
+        let mut encrypted_data = hex::decode(hex_encrypted_data).unwrap();
+        let expected_decrypted_data = hex::decode(hex_expected_decrypted_data).unwrap();
+
+        // --- Act ---
+        type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
+        let cipher = Aes128CbcDec::new_from_slices(&key, &iv).unwrap();
+        
+        // 执行解密
+        let decrypted_data = cipher.decrypt_padded_vec_mut::<Pkcs7>(&mut encrypted_data).unwrap();
+
+        // --- Assert ---
+        assert_eq!(decrypted_data, expected_decrypted_data, "解密后的数据与预期不符");
+    }
+}
