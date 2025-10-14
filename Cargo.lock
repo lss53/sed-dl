@@ -1696,6 +1696,7 @@ dependencies = [
  "reqwest-middleware",
  "reqwest-retry",
  "rpassword",
+ "sed-dl",
  "serde",
  "serde_json",
  "tempfile",
