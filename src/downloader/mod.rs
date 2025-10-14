@@ -391,6 +391,36 @@ impl ResourceDownloader {
         }
     }
 
+    async fn validate_token_with_probe(&self, token: &str, tasks: &[FileInfo]) -> bool {
+        // 找到第一个可以用来探测的URL
+        let Some(probe_url_str) = tasks.iter().find_map(|t| if t.url.starts_with("http") { Some(&t.url) } else { None }) else {
+            // 没有有效的HTTP URL任务，无法验证，暂时认为有效
+            warn!("在剩余任务中未找到可用于探测Token的HTTP URL。");
+            return true;
+
+        };
+
+        let Ok(mut url) = Url::parse(probe_url_str) else { return false; };
+        url.query_pairs_mut().append_pair("accessToken", token);
+
+        // 使用 HEAD 请求更轻量，我们只关心状态码，不关心内容
+        // 注意：这里我们直接使用 reqwest::Client，绕过中间件，
+        // 因为我们不希望这个探测请求被重试。
+        let res = self.context.http_client.client.head(url).send().await;
+        
+        match res {
+            Ok(response) => {
+                let status = response.status();
+                debug!("Token 探测响应状态码: {}", status);
+                !matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
+            }
+            Err(e) => {
+                warn!("Token 探测请求失败: {}", e);
+                false
+            }
+        }
+    }
+
     async fn handle_token_failure_and_retry(
         &self,
         initial_tasks: &[FileInfo],
@@ -413,7 +443,13 @@ impl ResourceDownloader {
                     match ui::prompt_hidden("请输入新 Token (输入不可见，完成后按回车)")
                     {
                         Ok(new_token) if !new_token.is_empty() => {
-                            info!("用户输入了新的 Token。");
+                            info!("用户输入了新的 Token，正在验证...");
+                            let is_valid = self.validate_token_with_probe(&new_token, initial_tasks).await;
+                            if !is_valid {
+                                eprintln!("\n{} 新输入的Token似乎仍然无效，请重试。", *symbols::ERROR);
+                                continue; // 继续循环，提示用户重新输入
+                            }
+                            // println!("{} Token 验证通过。", *symbols::OK);
                             *self.context.token.lock().await = new_token.clone();
                             if ui::confirm("是否保存此新 Token 以便后续使用?", false) {
                                 #[allow(clippy::collapsible_if)]
