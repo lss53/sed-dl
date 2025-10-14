@@ -55,10 +55,14 @@ impl CourseExtractor {
         }
     }
 
-    async fn get_base_directory(&self, data: &CourseDetailsResponse) -> PathBuf {
+    async fn get_base_directory(&self, data: &CourseDetailsResponse, context: &DownloadJobContext) -> PathBuf {
+        if context.args.flat {
+            return PathBuf::new();
+        }
+        
         let course_title = &data.global_title.zh_cn;
         let textbook_path = TextbookExtractor::new(self.http_client.clone(), self.config.clone())
-            .build_resource_path(data.tag_list.as_deref());
+            .build_resource_path(data.tag_list.as_deref(), context); 
 
         let mut full_chapter_path = PathBuf::new();
         #[allow(clippy::collapsible_if)]
@@ -435,7 +439,7 @@ impl ResourceExtractor for CourseExtractor {
             .fetch_json(&self.url_template, &[("resource_id", resource_id)])
             .await?;
 
-        let base_dir = self.get_base_directory(&data).await;
+        let base_dir = self.get_base_directory(&data, context).await;
         let teacher_map = self.get_teacher_map(&data);
         let all_resources = data.relations.resources.unwrap_or_default();
 

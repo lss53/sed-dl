@@ -2,16 +2,15 @@
 
 use super::ResourceExtractor;
 use crate::{
-    DownloadJobContext,
     client::RobustClient,
     config::AppConfig,
     constants,
     error::*,
     models::{
-        FileInfo,
         api::{AudioRelationItem, Tag, TextbookDetailsResponse},
+        FileInfo,
     },
-    symbols, ui, utils,
+    symbols, ui, utils, DownloadJobContext,
 };
 use async_trait::async_trait;
 use log::{debug, info, warn};
@@ -50,9 +49,12 @@ impl TextbookExtractor {
         }
     }
 
-    fn extract_pdf_info(&self, data: &TextbookDetailsResponse) -> (Vec<FileInfo>, Option<String>) {
-        let base_path = self.build_resource_path(data.tag_list.as_deref());
-
+    // MODIFIED: Takes a pre-calculated base_path
+    fn extract_pdf_info(
+        &self,
+        data: &TextbookDetailsResponse,
+        base_path: &Path, // <-- Receives base path
+    ) -> (Vec<FileInfo>, Option<String>) {
         let results: Vec<FileInfo> = data
             .ti_items
             .as_deref()
@@ -87,7 +89,7 @@ impl TextbookExtractor {
 
                 debug!("提取到PDF文件: '{}' @ '{}'", name, url_str);
                 Some(FileInfo {
-                    filepath: base_path.join(&name),
+                    filepath: base_path.join(&name), // <-- Uses the provided base_path
                     url: url_str.clone(),
                     ti_md5: item.ti_md5.clone(),
                     ti_size: item.ti_size,
@@ -126,7 +128,10 @@ impl TextbookExtractor {
         textbook_basename: Option<String>,
         context: &DownloadJobContext,
     ) -> AppResult<Vec<FileInfo>> {
-        let url_template = self.config.url_templates.get("TEXTBOOK_AUDIO")
+        let url_template = self
+            .config
+            .url_templates
+            .get("TEXTBOOK_AUDIO")
             .expect("配置文件中缺少必需的 'TEXTBOOK_AUDIO' URL 模板");
         let audio_items: Vec<AudioRelationItem> = self
             .http_client
@@ -180,9 +185,7 @@ impl TextbookExtractor {
             .unwrap_or(base_path);
         debug!("音频文件将保存至: {:?}", audio_path);
 
-        // 预计算总数和位宽
         let total_items = audio_items.len();
-        // 计算总数的位数，例如 66 -> 2位, 120 -> 3位
         let width = if total_items == 0 {
             1
         } else {
@@ -194,11 +197,7 @@ impl TextbookExtractor {
             .enumerate()
             .flat_map(|(i, item)| {
                 let title = &item.global_title.zh_cn;
-
                 let index_prefix = format!("{:0width$}", i + 1, width = width);
-                // 风格1: 连接符 " - "
-                // let base_name = format!("{} - {}", index_prefix, utils::sanitize_filename(title));
-                // 风格2: 方括号 "[...]"
                 let base_name = format!("[{}] {}", index_prefix, utils::sanitize_filename(title));
 
                 let audio_path_clone = audio_path.clone();
@@ -254,8 +253,16 @@ impl TextbookExtractor {
         sorted_formats
     }
 
-    pub(super) fn build_resource_path(&self, tag_list_val: Option<&[Tag]>) -> PathBuf {
-        // 使用静态的 LazyLock 变量
+    // MODIFIED: Takes context and checks for --flat flag
+    pub(super) fn build_resource_path(
+        &self,
+        tag_list_val: Option<&[Tag]>,
+        context: &DownloadJobContext,
+    ) -> PathBuf {
+        if context.args.flat {
+            return PathBuf::new();
+        }
+
         let mut path_map = TEMPLATE_TAGS.clone();
 
         if let Some(tags) = tag_list_val {
@@ -295,15 +302,20 @@ impl ResourceExtractor for TextbookExtractor {
         context: &DownloadJobContext,
     ) -> AppResult<Vec<FileInfo>> {
         info!("开始提取教材资源, ID: {}", resource_id);
-        let url_template = self.config.url_templates.get("TEXTBOOK_DETAILS")
+        let url_template = self
+            .config
+            .url_templates
+            .get("TEXTBOOK_DETAILS")
             .expect("配置文件中缺少必需的 'TEXTBOOK_DETAILS' URL 模板");
         let data: TextbookDetailsResponse = self
             .http_client
             .fetch_json(url_template, &[("resource_id", resource_id)])
             .await?;
 
-        let (mut pdf_files, textbook_basename) = self.extract_pdf_info(&data);
-        let base_path = self.build_resource_path(data.tag_list.as_deref());
+        // MODIFIED: Calculate base_path once and pass it down
+        let base_path = self.build_resource_path(data.tag_list.as_deref(), context);
+
+        let (mut pdf_files, textbook_basename) = self.extract_pdf_info(&data, &base_path);
 
         let audio_files = self
             .extract_audio_info(resource_id, base_path, textbook_basename, context)
