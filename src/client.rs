@@ -90,17 +90,19 @@ impl RobustClient {
             match self.get(&url).await {
                 Ok(res) => {
                     let text = res.text().await?;
-                    trace!("Raw JSON response from {}: {}", url, text);
+                    trace!("原始JSON响应来自 {}: {}", url, text);
 
                     match serde_json::from_str::<T>(&text) {
-                        Ok(data) => return Ok(data), // 解析成功，直接返回
+                        Ok(data) => return Ok(data),
                         Err(e) => {
                             warn!(
                                 "服务器 '{}' 响应成功但JSON解析失败: {:?}. 尝试下一个服务器...",
                                 prefix, e
                             );
-                            last_error = Some(AppError::from(e));
-                            // 继续循环，尝试下一个服务器
+                            last_error = Some(AppError::ApiParseFailed {
+                                url: url.clone(),
+                                source: e,
+                            });
                         }
                     }
                 }

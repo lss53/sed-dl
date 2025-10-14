@@ -16,6 +16,12 @@ pub enum AppError {
     TempFilePersist(#[from] tempfile::PersistError),
     #[error("JSON 解析错误: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("无法解析来自 '{url}' 的API响应: {source}")]
+    ApiParseFailed {
+        url: String,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("URL 解析错误: {0}")]
     Url(#[from] url::ParseError),
     #[error("Base64 解码错误: {0}")]
