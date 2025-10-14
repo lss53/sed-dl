@@ -68,3 +68,8 @@ path = "src/main.rs"
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 mockito = "1.3.0"
+sed-dl = { path = ".", features = ["testing"] }
+
+[features]
+# 用于在集成测试中暴露额外的辅助函数
+testing = []

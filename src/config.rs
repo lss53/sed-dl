@@ -8,18 +8,23 @@ use crate::{
     constants,
     error::AppResult,
 };
-use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration}; // 明确地从子模块导入函数
 
 // ===================================================================
 // 1. 定义与 config.json 对应的结构体
 // ===================================================================
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")] // 这样 "Textbook" 就能正确映射到 Textbook
+pub enum ExtractorTypeForFile {
+    Textbook,
+    Course,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiEndpointConfigFromFile {
     pub id_param: String,
-    pub extractor: String,
+    pub extractor: ExtractorTypeForFile, // <-- 类型从 String 变为 ExtractorTypeForFile
     pub url_template_keys: HashMap<String, String>,
 }
 
@@ -56,7 +61,7 @@ impl ExternalConfig {
                 "tchMaterial".into(),
                 ApiEndpointConfigFromFile {
                     id_param: "contentId".into(),
-                    extractor: "Textbook".into(),
+                    extractor: ExtractorTypeForFile::Textbook,
                     url_template_keys: HashMap::from([
                         ("textbook".into(), "TEXTBOOK_DETAILS".into()),
                         ("audio".into(), "TEXTBOOK_AUDIO".into()),
@@ -67,7 +72,7 @@ impl ExternalConfig {
                 "qualityCourse".into(),
                 ApiEndpointConfigFromFile {
                     id_param: "courseId".into(),
-                    extractor: "Course".into(),
+                    extractor: ExtractorTypeForFile::Course,
                     url_template_keys: HashMap::from([("main".into(), "COURSE_QUALITY".into())]),
                 },
             ),
@@ -75,7 +80,7 @@ impl ExternalConfig {
                 "syncClassroom/classActivity".into(),
                 ApiEndpointConfigFromFile {
                     id_param: "activityId".into(),
-                    extractor: "Course".into(),
+                    extractor: ExtractorTypeForFile::Course,
                     url_template_keys: HashMap::from([("main".into(), "COURSE_SYNC".into())]),
                 },
             ),
@@ -107,6 +112,7 @@ pub enum ResourceExtractorType {
     Course,
 }
 
+// AppConfig 结构体定义
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub max_workers: usize,
@@ -118,6 +124,23 @@ pub struct AppConfig {
     pub max_retries: u32,
     pub api_endpoints: HashMap<String, ApiEndpointConfig>,
     pub url_templates: HashMap<String, String>,
+}
+
+#[cfg(feature = "testing")]  // 标记这个实现只在测试时编译
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            max_workers: 5,
+            default_audio_format: "mp3".to_string(),
+            server_prefixes: vec!["s-file-1".to_string()],
+            user_agent: "test-agent/1.0".to_string(),
+            connect_timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(15),
+            max_retries: 3,
+            api_endpoints: HashMap::new(),
+            url_templates: HashMap::new(),
+        }
+    }
 }
 
 // ===================================================================
@@ -132,14 +155,10 @@ impl AppConfig {
             .api_endpoints
             .into_iter()
             .map(|(key, file_config)| {
-                let extractor_type = match file_config.extractor.as_str() {
-                    "Textbook" => Ok(ResourceExtractorType::Textbook),
-                    "Course" => Ok(ResourceExtractorType::Course),
-                    _ => Err(anyhow!(
-                        "未知的提取器类型: '{}' in config.json",
-                        file_config.extractor
-                    )),
-                }?;
+                let extractor_type = match file_config.extractor {
+                    ExtractorTypeForFile::Textbook => ResourceExtractorType::Textbook,
+                    ExtractorTypeForFile::Course => ResourceExtractorType::Course,
+                };
 
                 Ok((
                     key,
