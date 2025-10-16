@@ -8,7 +8,6 @@ use log::error;
 use std::{
     cmp::min,
     sync::{Arc, atomic::Ordering},
-    time::Duration,
 };
 
 /// 负责执行一批下载任务，管理并发和进度报告。
@@ -17,10 +16,12 @@ pub async fn execute_tasks(context: &DownloadJobContext, tasks: &[FileInfo]) -> 
     if max_workers == 0 {
         return Ok(());
     }
-    let main_pbar = setup_progress_bar(tasks, max_workers);
+
     let all_sizes_available = tasks.iter().all(|t| t.ti_size.is_some_and(|s| s > 0));
 
-    main_pbar.enable_steady_tick(Duration::from_millis(100));
+    // 在所有检查都通过后，才创建并显示进度条
+    let main_pbar = setup_progress_bar(tasks, max_workers, all_sizes_available);
+
     let error_sender = Arc::new(tokio::sync::Mutex::new(None::<AppError>));
 
     stream::iter(tasks.to_owned())
@@ -130,8 +131,7 @@ async fn run_single_concurrent_task(
 }
 
 /// 根据任务列表信息，配置并返回一个合适的进度条。
-fn setup_progress_bar(tasks: &[FileInfo], max_workers: usize) -> ProgressBar {
-    let all_sizes_available = tasks.iter().all(|t| t.ti_size.is_some_and(|s| s > 0));
+fn setup_progress_bar(tasks: &[FileInfo], max_workers: usize, all_sizes_available: bool) -> ProgressBar {
     let pbar: ProgressBar;
     if all_sizes_available {
         let total_size: u64 = tasks.iter().filter_map(|t| t.ti_size).sum();

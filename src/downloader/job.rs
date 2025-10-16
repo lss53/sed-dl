@@ -186,12 +186,26 @@ impl ResourceDownloader {
         loop {
             match task_runner::execute_tasks(&self.context, &tasks_to_attempt).await {
                 Ok(_) => break,
-                Err(_e @ AppError::TokenInvalid) => {
-                    warn!("下载任务因 Token 失效而中断。");
+                Err(e @ AppError::TokenInvalid) => {
+                    // 在这里，我们结合网络错误和程序上下文，来推断出最精确的错误原因。
+                    let token_is_empty = self.context.token.lock().await.is_empty();
+                    let specific_error = if token_is_empty {
+                        // 服务器说“认证失败”，而我们知道我们根本没给 Token，
+                        // 所以真正的错误是“Token 缺失”。
+                        AppError::TokenMissing
+                    } else {
+                        // 服务器说“认证失败”，而我们确实给了 Token，
+                        // 所以错误是“Token 无效或过期”。
+                        e // 直接使用原始的 TokenInvalid 错误
+                    };
+
+                    warn!("下载任务因认证问题中断: {}", specific_error);
                     if self.context.non_interactive {
-                        error!("非交互模式下 Token 失效，无法继续。");
-                        return Err(AppError::TokenInvalid);
+                        error!("非交互模式下因认证问题无法继续。");
+                        return Err(specific_error);
                     }
+                    
+                    // 进入交互流程
                     let retry_result = self.handle_token_failure_and_retry(&final_tasks).await?;
                     if retry_result.should_abort {
                         info!("用户选择中止任务。");
@@ -255,4 +269,5 @@ impl ResourceDownloader {
         );
         Ok(indices)
     }
+
 }

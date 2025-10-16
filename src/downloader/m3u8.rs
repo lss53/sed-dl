@@ -40,10 +40,11 @@ impl M3u8Downloader {
         info!("开始下载 M3U8 视频: {}", item.filepath.display());
         let mut url = Url::parse(&item.url)?;
         let token = self.context.token.lock().await;
+        // 如果 token 不为空，就附加到 URL 上
         if !token.is_empty() {
-            url.query_pairs_mut().append_pair("accessToken", &token);
+            url.query_pairs_mut().append_pair("accessToken", &*token);
         }
-        drop(token);
+        drop(token); // 尽早释放锁
 
         let (key, iv, playlist) = self.get_m3u8_key_and_playlist(url.clone()).await?;
 

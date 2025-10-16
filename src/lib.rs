@@ -72,7 +72,7 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
         println!(
             "\n{}",
             format!(
-                "{} 未找到本地 Access Token，将在需要时提示输入。",
+                "{} 未找到本地 Access Token。",
                 *symbols::INFO
             )
             .yellow()

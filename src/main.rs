@@ -154,8 +154,8 @@ async fn main() {
                 warn!("程序被用户中断。");
                 std::process::exit(130);
             }
-            AppError::TokenInvalid => {
-                error!("程序因Token无效而退出: {}", e);
+            AppError::TokenInvalid | AppError::TokenMissing => {
+                error!("程序因Token问题而退出: {}", e);
                 eprintln!("\n{} {}", *symbols::ERROR, format!("{}", e).red());
                 eprintln!(
                     "{} 请使用 --token-help 命令查看如何获取或更新您的 Access Token。",

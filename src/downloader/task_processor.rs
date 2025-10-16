@@ -257,15 +257,16 @@ impl TaskProcessor {
         loop {
             let mut url = Url::parse(&item.url)?;
             let token = self.context.token.lock().await;
+            // 如果 token 不为空，就附加到 URL 上
             if !token.is_empty() {
-                url.query_pairs_mut().append_pair("accessToken", &token);
+                url.query_pairs_mut().append_pair("accessToken", &*token);
             }
+
             let mut request_builder = self.context.http_client.client.get(url.clone());
             if current_resume_from > 0 {
                 request_builder = request_builder
                     .header(header::RANGE, format!("bytes={}-", current_resume_from));
             }
-            drop(token);
 
             let res = request_builder.send().await?;
             if res.status() == StatusCode::RANGE_NOT_SATISFIABLE {

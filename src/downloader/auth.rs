@@ -15,10 +15,17 @@ impl ResourceDownloader {
         &self,
         initial_tasks: &[FileInfo],
     ) -> AppResult<TokenRetryResult> {
+        let token_is_empty = self.context.token.lock().await.is_empty();
+        let (title, initial_message) = if token_is_empty {
+            ("需要提供 Token", "该资源需要 Access Token 才能下载。")
+        } else {
+            ("认证失败", "当前 Access Token 无效或已过期。")
+        };
+
         ui::box_message(
-            "认证失败",
+            title,
             &[
-                "当前 Access Token 已失效或无权限访问。",
+                initial_message,
                 "输入 '2' 可以查看获取 Token 的详细指南。",
             ],
             |s| s.red(),
@@ -76,42 +83,46 @@ impl ResourceDownloader {
                 _ => continue,
             }
         }
-        println!("\n{} Token 已更新。正在检查剩余任务...", *symbols::INFO);
-        let mut remaining_tasks = vec![];
-        let mut remaining_filenames = vec![];
-        for task in initial_tasks {
-            // Re-check file status with the new token context in mind.
-            if let Ok((action, _, _)) =
-                super::task_processor::TaskProcessor::prepare_download_action(
-                    task,
-                    &self.context.args,
-                )
-            {
-                if action != DownloadAction::Skip {
-                    remaining_tasks.push(task.clone());
-                    remaining_filenames.push(task.filepath.to_string_lossy().into_owned());
+        // 如果 initial_tasks 不为空，才执行检查逻辑
+        if !initial_tasks.is_empty() {
+            println!("\n{} Token 已更新。正在检查剩余任务...", *symbols::INFO);
+            let mut remaining_tasks = vec![];
+            let mut remaining_filenames = vec![];
+            for task in initial_tasks {
+                if let Ok((action, _, _)) =
+                    super::task_processor::TaskProcessor::prepare_download_action(
+                        task,
+                        &self.context.args,
+                    )
+                {
+                    if action != DownloadAction::Skip {
+                        remaining_tasks.push(task.clone());
+                        remaining_filenames.push(task.filepath.to_string_lossy().into_owned());
+                    }
                 }
             }
-        }
-        if remaining_tasks.is_empty() {
-            info!("所有任务均已完成，无需重试。");
-            println!("{} 所有任务均已完成，无需重试。", *symbols::OK);
+            if remaining_tasks.is_empty() {
+                info!("所有任务均已完成，无需重试。");
+                println!("{} 所有任务均已完成，无需重试。", *symbols::OK);
+            }
+            self.context
+                .manager
+                .reset_token_failures(&remaining_filenames);
+            info!("准备重试剩余的 {} 个任务。", remaining_tasks.len());
+            println!(
+                "{} 准备重试剩余的 {} 个任务...",
+                *symbols::INFO,
+                remaining_tasks.len()
+            );
             return Ok(TokenRetryResult {
-                remaining_tasks: None,
+                remaining_tasks: Some(remaining_tasks),
                 should_abort: false,
             });
         }
-        self.context
-            .manager
-            .reset_token_failures(&remaining_filenames);
-        info!("准备重试剩余的 {} 个任务。", remaining_tasks.len());
-        println!(
-            "{} 准备重试剩余的 {} 个任务...",
-            *symbols::INFO,
-            remaining_tasks.len()
-        );
+ 
+        // 如果 initial_tasks 为空，直接成功返回
         Ok(TokenRetryResult {
-            remaining_tasks: Some(remaining_tasks),
+            remaining_tasks: None, // 使用 None 来表示“无需处理剩余任务”
             should_abort: false,
         })
     }

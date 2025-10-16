@@ -6,6 +6,8 @@ use thiserror::Error;
 pub enum AppError {
     #[error("认证失败 (Token 无效或已过期)")]
     TokenInvalid,
+    #[error("未提供 Access Token，无法进行下载")]
+    TokenMissing,
     #[error("网络请求失败: {0}")]
     Network(#[from] reqwest::Error),
     #[error("网络中间件错误: {0}")]

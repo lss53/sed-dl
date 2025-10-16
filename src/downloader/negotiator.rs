@@ -93,10 +93,8 @@ impl<'a> ItemNegotiator<'a> {
             return Ok(video_groups.into_iter().flatten().collect());
         }
 
-        let default_choice = sorted_qualities
-            .first()
-            .map(|s| s.as_str())
-            .unwrap_or("all");
+        // 直接按回车即可选择列表中的第一个（也是最好的）选项。
+        let default_choice = "1";
         let user_choices = ui::get_user_choices_from_menu(
             &sorted_qualities,
             "检测到多种视频清晰度，请选择",
@@ -241,8 +239,9 @@ impl<'a> ItemNegotiator<'a> {
             return Ok(final_items);
         }
 
+        
         let user_choices =
-            ui::get_user_choices_from_menu(&sorted_formats, "检测到多种音频格式，请选择", "all");
+            ui::get_user_choices_from_menu(&sorted_formats, "检测到多种音频格式，请选择", "1");
         let lower_choices: Vec<_> = user_choices.iter().map(|s| s.to_lowercase()).collect();
 
         for (_, group) in audio_groups {
