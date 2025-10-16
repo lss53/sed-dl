@@ -140,12 +140,12 @@ pub struct TextbookDetailsResponse {
     pub global_title: Option<ZhCn>,
     pub ti_items: Option<Vec<TiItem>>,
     pub tag_list: Option<Vec<Tag>>,
-    pub update_time: DateTime<FixedOffset>
+    pub update_time: DateTime<FixedOffset>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AudioRelationItem {
     pub global_title: ZhCn,
     pub ti_items: Option<Vec<TiItem>>,
-    pub update_time: DateTime<FixedOffset>
+    pub update_time: DateTime<FixedOffset>,
 }
