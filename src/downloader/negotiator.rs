@@ -61,8 +61,10 @@ impl<'a> ItemNegotiator<'a> {
             .filter_map(|f| VIDEO_QUALITY_RE.captures(&f.filepath.to_string_lossy()).and_then(|c| c.get(1)).map(|m| m.as_str().to_string()))
             .collect::<BTreeSet<_>>().into_iter().collect();
 
-        self.sort_videos_by_quality_desc(&mut sorted_qualities.iter_mut().map(|s| FileInfo { filepath: std::path::PathBuf::from(format!("[{}]", s)), ..Default::default() }).collect::<Vec<_>>());
-        sorted_qualities.sort_by_key(|q| q.parse::<u32>().unwrap_or(0));
+        // 直接对清晰度字符串列表进行排序。
+        // `sort_by_key` 会将字符串解析为数字进行比较，实现数值排序。
+        // `reverse()` 将排序结果反转，实现从高到低的降序排列。
+        sorted_qualities.sort_by_key(|q_str| q_str.parse::<u32>().unwrap_or(0));
         sorted_qualities.reverse();
 
         if sorted_qualities.len() <= 1 {
