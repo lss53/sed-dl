@@ -3,12 +3,11 @@
 use crate::{config::AppConfig, error::*};
 use anyhow::anyhow;
 use log::{debug, error, trace, warn};
-use reqwest::{IntoUrl, Response, StatusCode};
+use reqwest::{header, IntoUrl, Response, StatusCode};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{
-    DefaultRetryableStrategy, // 直接从 crate 根导入
+    policies::ExponentialBackoff, DefaultRetryableStrategy, Retryable, RetryableStrategy,
     RetryTransientMiddleware,
-    policies::ExponentialBackoff,
 };
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
@@ -20,7 +19,7 @@ pub struct RobustClient {
 }
 
 impl RobustClient {
-    // ## 修改点 1: 更新中间件初始化 ##
+    // 更新中间件初始化
     pub fn new(config: Arc<AppConfig>) -> AppResult<Self> {
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(config.max_retries);
 
@@ -35,7 +34,7 @@ impl RobustClient {
         // 使用新的 `new_with_policy_and_strategy` 方法，并提供默认的重试策略
         .with(RetryTransientMiddleware::new_with_policy_and_strategy(
             retry_policy,
-            DefaultRetryableStrategy,
+            RateLimitingRetryStrategy, 
         ))
         .build();
         debug!(
@@ -120,5 +119,47 @@ impl RobustClient {
                 "所有服务器均请求失败，且没有配置服务器前缀"
             ))),
         }
+    }
+}
+
+/// 一个自定义的重试策略，增加了对 HTTP 429 (Too Many Requests) 错误的处理。
+#[derive(Clone)]
+struct RateLimitingRetryStrategy;
+
+impl RetryableStrategy for RateLimitingRetryStrategy {
+    fn handle(
+        &self,
+        res: &Result<reqwest::Response, reqwest_middleware::Error>,
+    ) -> Option<Retryable> {
+        // 只检查我们关心的特殊情况：HTTP 429 错误。
+        if let Ok(success) = res {
+            if success.status() == StatusCode::TOO_MANY_REQUESTS {
+                debug!("服务器返回 429 Too Many Requests，将根据 Retry-After 头进行重试");
+                // 尝试从服务器的 Retry-After 响应头中获取建议的等待时间
+                let retry_after = success
+                    .headers()
+                    .get(header::RETRY_AFTER)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .map(std::time::Duration::from_secs);
+
+                let delay = retry_after.unwrap_or_else(|| {
+                    // 如果服务器没有提供 Retry-After，我们自己设定一个默认的短暂停顿
+                    // 以免立即重试再次触发速率限制。
+                    std::time::Duration::from_secs(1)
+                });
+ 
+                warn!("服务器速率限制，将等待 {:?} 后重试...", delay);
+                std::thread::sleep(delay);
+ 
+                // 等待结束后，我们告诉中间件这是一个“临时错误”，
+                // 它会立即（或经过很短的指数退避延迟后）进行下一次尝试。
+                return Some(Retryable::Transient);
+            }
+        }
+
+        // 对于所有其他情况（包括网络错误和其他HTTP状态码），
+        // 我们直接将任务委托给 reqwest-retry 库的默认策略。
+        DefaultRetryableStrategy.handle(res)
     }
 }
