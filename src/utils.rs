@@ -59,8 +59,7 @@ pub fn sanitize_filename(name: &str) -> String {
         {
             let stem_part_str = stem_part.to_string_lossy();
             let ext_str = format!(".{}", ext.to_string_lossy());
-            let max_stem_bytes =
-                constants::MAX_FILENAME_BYTES.saturating_sub(ext_str.len());
+            let max_stem_bytes = constants::MAX_FILENAME_BYTES.saturating_sub(ext_str.len());
             let truncated_stem = safe_truncate_utf8(&stem_part_str, max_stem_bytes);
             name = format!("{}{}", truncated_stem, ext_str);
         } else {
@@ -121,7 +120,10 @@ pub fn parse_selection_indices(selection_str: &str, total_items: usize) -> Vec<u
                     }
                 }
             }
-        } else if let Ok(num) = part.parse::<usize>() && num > 0 && num <= total_items {
+        } else if let Ok(num) = part.parse::<usize>()
+            && num > 0
+            && num <= total_items
+        {
             indices.insert(num - 1);
         }
     }

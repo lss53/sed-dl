@@ -107,7 +107,7 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
 
 async fn handle_interactive_mode(base_context: DownloadJobContext) -> AppResult<()> {
     ui::print_header("交互模式");
-    
+
     let prompt_message: &str;
     let help_message: &str;
 
@@ -117,22 +117,15 @@ async fn handle_interactive_mode(base_context: DownloadJobContext) -> AppResult<
             crate::cli::ResourceType::QualityCourse => "精品课 (qualityCourse)",
             crate::cli::ResourceType::SyncClassroom => "同步课堂 (syncClassroom/classActivity)",
         };
-        println!(
-            "你正处于针对 [{}] 类型的ID下载模式。",
-            type_name.yellow()
-        );
+        println!("你正处于针对 [{}] 类型的ID下载模式。", type_name.yellow());
         help_message = "在此模式下，你可以逐一输入ID进行下载。";
         prompt_message = "请输入资源ID";
     } else {
         help_message = "在此模式下，你可以逐一输入链接进行下载。";
         prompt_message = "请输入资源链接";
     }
-    
-    println!(
-        "{}按 {} 可随时退出。",
-        help_message,
-        *symbols::CTRL_C
-    );
+
+    println!("{}按 {} 可随时退出。", help_message, *symbols::CTRL_C);
 
     loop {
         match ui::prompt(prompt_message, None) {

@@ -6,7 +6,7 @@ use serde::Deserialize;
 // --- 通用结构体 ---
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct GlobalTitle {
+pub struct ZhCn {
     #[serde(rename = "zh-CN")]
     pub zh_cn: String,
 }
@@ -39,30 +39,6 @@ pub struct Tag {
     pub tag_name: String,
 }
 
-// --- 课程 (Course) API 响应结构体 ---
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct CourseDetailsResponse {
-    pub global_title: GlobalTitle,
-    pub tag_list: Option<Vec<Tag>>,
-    pub custom_properties: CourseCustomProperties,
-    pub chapter_paths: Option<Vec<String>>,
-    pub teacher_list: Option<Vec<Teacher>>,
-    pub relations: Relations,
-    pub resource_structure: Option<ResourceStructure>,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct CourseCustomProperties {
-    pub teachingmaterial_info: Option<TeachingMaterialInfo>,
-    pub lesson_teacher_ids: Option<Vec<String>>,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct TeachingMaterialInfo {
-    pub id: String,
-}
-
 #[derive(Deserialize, Debug, Clone)]
 pub struct Teacher {
     pub id: String,
@@ -70,28 +46,38 @@ pub struct Teacher {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct Relations {
-    #[serde(alias = "national_course_resource", alias = "course_resource")]
-    pub resources: Option<Vec<CourseResource>>,
+pub struct TeachingMaterialInfo {
+    pub id: String,
 }
 
+// --- 课程通用结构体 ---
+
 #[derive(Deserialize, Debug, Clone)]
-pub struct CourseResource {
-    pub global_title: GlobalTitle,
-    pub custom_properties: CourseResourceCustomProperties,
-    pub update_time: Option<DateTime<FixedOffset>>,
-    pub resource_type_code: String,
-    pub ti_items: Option<Vec<TiItem>>,
+pub struct CourseDetailsCustomProperties {
+    pub teachingmaterial_info: Option<TeachingMaterialInfo>,
+    pub lesson_teacher_ids: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct CourseResourceCustomProperties {
     pub alias_name: Option<String>,
+    #[serde(default)]
+    pub height: Option<String>, // 新增 height 字段
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct ResourceStructure {
-    pub relations: Option<Vec<ResourceStructureRelation>>,
+pub struct CourseResource {
+    pub id: String,
+    pub global_title: ZhCn,
+    pub resource_type_code: String,
+    pub update_time: DateTime<FixedOffset>,
+    pub custom_properties: CourseResourceCustomProperties,
+    pub ti_items: Option<Vec<TiItem>>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ResourceStructureRelationCustomProperties {
+    pub teacher_ids: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -102,25 +88,64 @@ pub struct ResourceStructureRelation {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct ResourceStructureRelationCustomProperties {
-    pub teacher_ids: Option<Vec<String>>,
+pub struct ResourceStructure {
+    pub relations: Option<Vec<ResourceStructureRelation>>,
 }
 
-// --- 教材 (Textbook) API 响应结构体 ---
+// --- 精品课 (qualityCourse) 专用模型 ---
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct CourseDetailsRelations {
+    #[serde(default, rename = "course_resource")]
+    pub resources: Vec<CourseResource>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct CourseDetailsResponse {
+    pub global_title: ZhCn,
+    pub tag_list: Option<Vec<Tag>>,
+    pub custom_properties: CourseDetailsCustomProperties,
+    pub chapter_paths: Option<Vec<String>>,
+    pub relations: CourseDetailsRelations,
+    pub resource_structure: Option<ResourceStructure>,
+    pub teacher_list: Option<Vec<Teacher>>,
+}
+
+// --- 同步课 (syncClassroom) 专用模型 ---
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct SyncClassroomRelations {
+    #[serde(default, rename = "national_course_resource")]
+    pub resources: Vec<CourseResource>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct SyncClassroomResponse {
+    pub global_title: ZhCn,
+    pub tag_list: Option<Vec<Tag>>,
+    pub custom_properties: CourseDetailsCustomProperties,
+    pub chapter_paths: Option<Vec<String>>,
+    pub relations: SyncClassroomRelations,
+    pub resource_structure: Option<ResourceStructure>,
+    #[serde(default)]
+    pub teacher_list: Vec<Teacher>,
+}
+
+// --- 教材 (Textbook) 专用模型 ---
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct TextbookDetailsResponse {
     pub id: String,
     pub title: Option<String>,
-    pub global_title: Option<GlobalTitle>,
+    pub global_title: Option<ZhCn>,
     pub ti_items: Option<Vec<TiItem>>,
     pub tag_list: Option<Vec<Tag>>,
-    pub update_time: Option<DateTime<FixedOffset>>,
+    pub update_time: DateTime<FixedOffset>
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct AudioRelationItem {
-    pub global_title: GlobalTitle,
+    pub global_title: ZhCn,
     pub ti_items: Option<Vec<TiItem>>,
-    pub update_time: Option<DateTime<FixedOffset>>,
+    pub update_time: DateTime<FixedOffset>
 }

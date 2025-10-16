@@ -64,11 +64,7 @@ impl RobustClient {
                 Err(AppError::TokenInvalid)
             }
             s => {
-                warn!(
-                    "向 {} 的 HTTP 请求返回状态码: {}",
-                    res.url(),
-                    s
-                );
+                warn!("向 {} 的 HTTP 请求返回状态码: {}", res.url(), s);
                 // error_for_status() 会根据状态码生成一个合适的 reqwest::Error
                 // .into() 会自动将其转换为 AppError::Network
                 Err(res.error_for_status().unwrap_err().into())

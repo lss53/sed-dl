@@ -44,7 +44,10 @@ pub enum ResourceType {
 pub struct Cli {
     // --- 运行模式 (Mode) ---
     /// 启动交互式会话，逐一输入链接
-    #[arg(short, long, action = clap::ArgAction::SetTrue, help_heading = "Mode")]
+    #[arg(short, long, action = clap::ArgAction::SetTrue, help_heading = "Mode",
+        // 添加参数冲突规则
+        conflicts_with_all = &["select", "video_quality", "audio_format", "prompt_each"]
+    )]
     pub interactive: bool,
     /// 指定要下载的单个资源链接
     #[arg(long, help_heading = "Mode")]
@@ -53,7 +56,13 @@ pub struct Cli {
     #[arg(long, help_heading = "Mode", requires = "type")]
     pub id: Option<String>,
     /// 从文本文件批量下载多个链接或ID (每行一个)
-    #[arg(short, long, value_name = "FILE", help_heading = "Mode", requires = "type")]
+    #[arg(
+        short,
+        long,
+        value_name = "FILE",
+        help_heading = "Mode",
+        requires = "type"
+    )]
     pub batch_file: Option<PathBuf>,
     /// 显示如何获取 Access Token 的指南并退出
     #[arg(long, action = clap::ArgAction::SetTrue, help_heading = "Mode")]
@@ -63,16 +72,19 @@ pub struct Cli {
     /// [非交互模式] 指定下载项 (例如 '1-5,8', 'all')
     #[arg(long, default_value_t = constants::DEFAULT_SELECTION.to_string(), value_name = "SELECTION", help_heading = "Options")]
     pub select: String,
+    /// 按文件扩展名过滤，只下载指定类型的文件 (例如: pdf,mp3)
+    #[arg(long, value_name = "EXTS", value_delimiter = ',', help_heading = "Options")]
+    pub filter_ext: Option<Vec<String>>,
     /// [ID模式] 指定资源类型
     #[arg(long, value_enum, help_heading = "Options")] // 将类型改为 value_enum
     pub r#type: Option<ResourceType>, // 将类型从 String 改为 ResourceType
     /// 提供访问令牌 (Access Token)，优先级最高
-    #[arg(long, help_heading = "Options")]
+    #[arg(long, value_name = "TOKEN", help_heading = "Options")]
     pub token: Option<String>,
     /// 强制重新下载已存在的文件
     #[arg(short, long, action = clap::ArgAction::SetTrue, help_heading = "Options")]
     pub force_redownload: bool,
-    /// 选择视频清晰度: 'best'(最高), 'worst'(最低), 或具体值 '720p' 等
+    /// 选择视频清晰度: 'best'(最高), 'worst'(最低), 或具体值 '720' 等
     #[arg(short='q', long, default_value_t = constants::DEFAULT_VIDEO_QUALITY.to_string(), help_heading = "Options")]
     pub video_quality: String,
     /// [教材模式] 选择音频格式: 'mp3', 'm4a' 等

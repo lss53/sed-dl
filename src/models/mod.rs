@@ -6,18 +6,10 @@ use crate::error::AppError;
 use crate::symbols;
 use chrono::{DateTime, FixedOffset};
 use colored::{ColoredString, Colorize};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct FileInfo {
-    pub filepath: PathBuf,
-    pub url: String,
-    pub ti_md5: Option<String>,
-    pub ti_size: Option<u64>,
-    pub date: Option<DateTime<FixedOffset>>,
-}
-
+// 1. 定义 DownloadStatus 枚举 (只定义一次)
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DownloadStatus {
     Success,
@@ -36,6 +28,7 @@ pub enum DownloadStatus {
     UnexpectedError,
 }
 
+// 2. 为 DownloadStatus 实现 get_display_info
 impl DownloadStatus {
     pub fn get_display_info(
         &self,
@@ -65,6 +58,7 @@ impl DownloadStatus {
     }
 }
 
+// 3. 为 DownloadStatus 实现 From<&AppError>
 impl From<&AppError> for DownloadStatus {
     fn from(error: &AppError) -> Self {
         match error {
@@ -82,7 +76,7 @@ impl From<&AppError> for DownloadStatus {
                 }
             }
             AppError::NetworkMiddleware(_) => DownloadStatus::NetworkError,
-            AppError::Io(_) => DownloadStatus::IoError,
+            AppError::Io(_) | AppError::TempFilePersist(_) => DownloadStatus::IoError,
             AppError::M3u8Parse(_) | AppError::Merge(_) => DownloadStatus::MergeError,
             AppError::Security(_) => DownloadStatus::KeyError,
             AppError::Validation(msg) => {
@@ -104,11 +98,39 @@ pub struct DownloadResult {
     pub message: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DownloadAction {
     Skip,
     Resume,
     DownloadNew,
+}
+
+// 4. 定义 ResourceCategory (只定义一次)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ResourceCategory {
+    Video,
+    Audio,
+    Document,
+    Other,
+}
+
+// 5. 为 ResourceCategory 实现 Default (只实现一次)
+impl Default for ResourceCategory {
+    fn default() -> Self {
+        ResourceCategory::Other
+    }
+}
+
+// 6. 修正 FileInfo 定义
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FileInfo {
+    pub filepath: PathBuf,
+    pub url: String,
+    pub ti_md5: Option<String>,
+    pub ti_size: Option<u64>,
+    pub date: Option<DateTime<FixedOffset>>,
+    #[serde(default)]
+    pub category: ResourceCategory,
 }
 
 pub struct TokenRetryResult {

@@ -71,15 +71,21 @@ pub fn load_token_from_config() -> Option<String> {
 }
 
 pub fn resolve_token(cli_token: Option<&str>) -> (Option<String>, String) {
-    if let Some(token) = cli_token && !token.is_empty() {
+    if let Some(token) = cli_token
+        && !token.is_empty()
+    {
         debug!("使用来自命令行参数的 Token");
         return (Some(token.to_string()), "命令行参数".to_string());
     }
-    if let Ok(token) = std::env::var("ACCESS_TOKEN") && !token.is_empty() {
+    if let Ok(token) = std::env::var("ACCESS_TOKEN")
+        && !token.is_empty()
+    {
         debug!("使用来自环境变量 ACCESS_TOKEN 的 Token");
         return (Some(token), "环境变量 (ACCESS_TOKEN)".to_string());
     }
-    if let Some(token) = load_token_from_config() && !token.is_empty() {
+    if let Some(token) = load_token_from_config()
+        && !token.is_empty()
+    {
         debug!("使用来自本地配置文件的 Token");
         return (Some(token), "本地Token文件".to_string());
     }

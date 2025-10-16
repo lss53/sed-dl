@@ -1,6 +1,6 @@
 // src/downloader/m3u8.rs
 
-use super::DownloadStatus;
+use crate::models::DownloadStatus;
 use crate::{DownloadJobContext, client::RobustClient, error::*, models::FileInfo};
 use aes::cipher::{BlockDecryptMut, KeyInit, KeyIvInit, block_padding::Pkcs7};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -10,7 +10,6 @@ use indicatif::ProgressBar;
 use log::{debug, error, info, warn};
 use md5::{Digest, Md5};
 use serde_json::Value;
-use tempfile::NamedTempFile;
 use std::{
     fs::{self, File},
     io::{self, BufWriter, Write},
@@ -18,6 +17,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use tempfile::NamedTempFile;
 use url::Url;
 
 pub(super) type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;

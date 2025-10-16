@@ -44,7 +44,7 @@ fn init_logger(level: LogLevel) {
         }
     };
 
-    #[allow(clippy::collapsible_if)] 
+    #[allow(clippy::collapsible_if)]
     if let Some(dir) = log_file_path.parent() {
         if let Err(e) = std::fs::create_dir_all(dir) {
             eprintln!("警告: 无法创建日志目录 {:?}: {}", dir, e);
@@ -157,7 +157,10 @@ async fn main() {
             AppError::TokenInvalid => {
                 error!("程序因Token无效而退出: {}", e);
                 eprintln!("\n{} {}", *symbols::ERROR, format!("{}", e).red());
-                eprintln!("{} 请使用 --token-help 命令查看如何获取或更新您的 Access Token。", *symbols::INFO);
+                eprintln!(
+                    "{} 请使用 --token-help 命令查看如何获取或更新您的 Access Token。",
+                    *symbols::INFO
+                );
                 std::process::exit(1);
             }
             _ => {

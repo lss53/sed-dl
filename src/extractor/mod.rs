@@ -3,8 +3,10 @@
 pub mod chapter_resolver;
 pub mod course;
 pub mod textbook;
+pub mod sync_classroom; // <--- 新增
+mod utils; // <--- 新增
 
-use crate::{DownloadJobContext, error::*, models::FileInfo};
+use crate::{error::*, models::FileInfo, DownloadJobContext};
 use async_trait::async_trait;
 
 #[async_trait]

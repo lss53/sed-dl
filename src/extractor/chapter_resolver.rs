@@ -90,7 +90,8 @@ impl ChapterTreeResolver {
                 return Some(new_path);
             }
             if let Some(child_nodes) = node.get("child_nodes").and_then(|v| v.as_array())
-                && let Some(found_path) = self.find_path_in_tree(child_nodes, target_id, new_path) {
+                && let Some(found_path) = self.find_path_in_tree(child_nodes, target_id, new_path)
+            {
                 return Some(found_path);
             }
         }
