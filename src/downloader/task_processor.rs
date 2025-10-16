@@ -1,11 +1,11 @@
 // src/downloader/task_processor.rs
 
 use super::m3u8::M3u8Downloader;
-use crate::{cli::Cli, error::*, models::*, utils, DownloadJobContext};
+use crate::{DownloadJobContext, cli::Cli, error::*, models::*, utils};
 use futures::StreamExt;
 use indicatif::{HumanBytes, ProgressBar};
 use log::{debug, error, info, warn};
-use reqwest::{header, StatusCode};
+use reqwest::{StatusCode, header};
 use std::{
     fs::{self, File, OpenOptions},
     io::Write as IoWrite,
@@ -20,7 +20,6 @@ enum ValidationStatus {
     NoInfoToValidate,
 }
 
-
 /// `TaskProcessor` 封装了处理单个下载任务的所有逻辑。
 pub struct TaskProcessor {
     context: DownloadJobContext,
@@ -30,7 +29,6 @@ impl TaskProcessor {
     pub fn new(context: DownloadJobContext) -> Self {
         Self { context }
     }
-    
 
     /// 处理单个文件任务，包括准备、下载和最终校验。
     pub async fn process(
@@ -43,10 +41,16 @@ impl TaskProcessor {
             if let Some(parent) = item.filepath.parent() {
                 fs::create_dir_all(parent)?;
             }
-            let (action, resume_bytes, reason) = Self::prepare_download_action(&item, &self.context.args)?;
+            let (action, resume_bytes, reason) =
+                Self::prepare_download_action(&item, &self.context.args)?;
             if action == DownloadAction::Skip {
                 return Ok(DownloadResult {
-                    filename: item.filepath.file_name().unwrap().to_string_lossy().to_string(),
+                    filename: item
+                        .filepath
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string(),
                     status: DownloadStatus::Skipped,
                     message: Some(reason),
                 });
@@ -64,17 +68,26 @@ impl TaskProcessor {
                 }
             };
 
-            let final_status = if matches!(download_status, DownloadStatus::Success | DownloadStatus::Resumed) {
+            let final_status = if matches!(
+                download_status,
+                DownloadStatus::Success | DownloadStatus::Resumed
+            ) {
                 Self::finalize_and_validate(&item)?
             } else {
                 download_status
             };
             Ok(DownloadResult {
-                filename: item.filepath.file_name().unwrap().to_string_lossy().to_string(),
+                filename: item
+                    .filepath
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
                 status: final_status,
                 message: None,
             })
-        }.await;
+        }
+        .await;
 
         match attempt_result {
             Ok(result) => Ok(result),
@@ -82,7 +95,12 @@ impl TaskProcessor {
             Err(e) => {
                 error!("处理任务 '{:?}' 时发生错误: {}", item.filepath, e);
                 Ok(DownloadResult {
-                    filename: item.filepath.file_name().unwrap().to_string_lossy().to_string(),
+                    filename: item
+                        .filepath
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string(),
                     status: DownloadStatus::from(&e),
                     message: Some(e.to_string()),
                 })
@@ -104,20 +122,24 @@ impl TaskProcessor {
             return Ok((DownloadAction::DownloadNew, 0, "强制重新下载".to_string()));
         }
         match Self::check_local_file_status(item)? {
-            ValidationStatus::Valid => Ok((
+            ValidationStatus::Valid => {
+                Ok((DownloadAction::Skip, 0, "文件已存在且校验通过".to_string()))
+            }
+            ValidationStatus::CanResume(from) => Ok((
+                DownloadAction::Resume,
+                from,
+                "文件不完整，尝试续传".to_string(),
+            )),
+            ValidationStatus::Invalid(reason) => Ok((
+                DownloadAction::DownloadNew,
+                0,
+                format!("文件无效: {}", reason),
+            )),
+            ValidationStatus::NoInfoToValidate => Ok((
                 DownloadAction::Skip,
                 0,
-                "文件已存在且校验通过".to_string(),
+                "文件已存在 (无校验信息)".to_string(),
             )),
-            ValidationStatus::CanResume(from) => {
-                Ok((DownloadAction::Resume, from, "文件不完整，尝试续传".to_string()))
-            }
-            ValidationStatus::Invalid(reason) => {
-                Ok((DownloadAction::DownloadNew, 0, format!("文件无效: {}", reason)))
-            }
-            ValidationStatus::NoInfoToValidate => {
-                Ok((DownloadAction::Skip, 0, "文件已存在 (无校验信息)".to_string()))
-            }
         }
     }
 
@@ -125,7 +147,9 @@ impl TaskProcessor {
     fn finalize_and_validate(item: &FileInfo) -> AppResult<DownloadStatus> {
         debug!("对文件 '{:?}' 进行最终校验", item.filepath);
         match Self::check_local_file_status(item)? {
-            ValidationStatus::Valid | ValidationStatus::NoInfoToValidate => Ok(DownloadStatus::Success),
+            ValidationStatus::Valid | ValidationStatus::NoInfoToValidate => {
+                Ok(DownloadStatus::Success)
+            }
             ValidationStatus::CanResume(_) => {
                 error!("文件 '{:?}' 下载后仍不完整，校验失败。", item.filepath);
                 Ok(DownloadStatus::SizeFailed)
@@ -149,7 +173,7 @@ impl TaskProcessor {
         }
         let metadata = item.filepath.metadata()?;
         let actual_size = metadata.len();
-        
+
         if item.category == ResourceCategory::Video {
             debug!(
                 "M3U8 校验: 文件='{:?}', 期望大小(来自JSON): {:?}, 实际大小(合并后): {}",
@@ -173,7 +197,7 @@ impl TaskProcessor {
                 // 普通文件，无容差
                 0
             };
-            
+
             let diff = (actual_size as i64 - expected_size as i64).abs() as u64;
 
             debug!(
@@ -217,7 +241,7 @@ impl TaskProcessor {
             }
             return Ok(ValidationStatus::Valid);
         }
-        
+
         Ok(ValidationStatus::NoInfoToValidate)
     }
 
@@ -234,13 +258,12 @@ impl TaskProcessor {
             let mut url = Url::parse(&item.url)?;
             let token = self.context.token.lock().await;
             if !token.is_empty() {
-                url.query_pairs_mut()
-                    .append_pair("accessToken", &token);
+                url.query_pairs_mut().append_pair("accessToken", &token);
             }
             let mut request_builder = self.context.http_client.client.get(url.clone());
             if current_resume_from > 0 {
-                request_builder =
-                    request_builder.header(header::RANGE, format!("bytes={}-", current_resume_from));
+                request_builder = request_builder
+                    .header(header::RANGE, format!("bytes={}-", current_resume_from));
             }
             drop(token);
 
@@ -257,7 +280,10 @@ impl TaskProcessor {
                 }
                 continue;
             }
-            if matches!(res.status(), StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
+            if matches!(
+                res.status(),
+                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+            ) {
                 return Err(AppError::TokenInvalid);
             }
             let res = res.error_for_status()?;

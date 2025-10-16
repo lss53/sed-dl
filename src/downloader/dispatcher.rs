@@ -4,7 +4,7 @@ use super::job::ResourceDownloader;
 use crate::{
     config::ResourceExtractorType,
     error::*,
-    extractor::{course, sync_classroom, textbook, ResourceExtractor},
+    extractor::{ResourceExtractor, course, sync_classroom, textbook},
     utils,
 };
 use anyhow::anyhow;
@@ -24,8 +24,7 @@ impl ResourceDownloader {
         for (path_key, api_conf) in &self.context.config.api_endpoints {
             if url.path().contains(path_key) {
                 debug!("URL 路径匹配 API 端点: '{}'", path_key);
-                if let Some(resource_id) =
-                    url.query_pairs().find(|(k, _)| k == &api_conf.id_param)
+                if let Some(resource_id) = url.query_pairs().find(|(k, _)| k == &api_conf.id_param)
                 {
                     let id = resource_id.1.to_string();
                     if utils::is_resource_id(&id) {

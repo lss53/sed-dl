@@ -30,11 +30,18 @@ impl ResourceDownloader {
             );
             match ui::prompt(&prompt_msg, Some("1")) {
                 Ok(choice) if choice == "1" => {
-                    match ui::prompt_hidden("请输入新 Token (输入不可见，完成后按回车)") {
+                    match ui::prompt_hidden("请输入新 Token (输入不可见，完成后按回车)")
+                    {
                         Ok(new_token) if !new_token.is_empty() => {
                             info!("用户输入了新的 Token，正在验证...");
-                            if !self.validate_token_with_probe(&new_token, initial_tasks).await {
-                                eprintln!("\n{} 新输入的Token似乎仍然无效，请重试。", *symbols::ERROR);
+                            if !self
+                                .validate_token_with_probe(&new_token, initial_tasks)
+                                .await
+                            {
+                                eprintln!(
+                                    "\n{} 新输入的Token似乎仍然无效，请重试。",
+                                    *symbols::ERROR
+                                );
                                 continue;
                             }
                             *self.context.token.lock().await = new_token.clone();
@@ -111,13 +118,20 @@ impl ResourceDownloader {
 
     /// 使用 HEAD 请求探测一个 URL，以验证新 Token 的有效性。
     async fn validate_token_with_probe(&self, token: &str, tasks: &[FileInfo]) -> bool {
-        let Some(probe_url_str) = tasks.iter().find_map(|t| if t.url.starts_with("http") { Some(&t.url) } else { None }) else {
+        let Some(probe_url_str) = tasks.iter().find_map(|t| {
+            if t.url.starts_with("http") {
+                Some(&t.url)
+            } else {
+                None
+            }
+        }) else {
             warn!("在剩余任务中未找到可用于探测Token的HTTP URL。");
             return true;
         };
-        let Ok(mut url) = Url::parse(probe_url_str) else { return false; };
-        url.query_pairs_mut()
-            .append_pair("accessToken", token);
+        let Ok(mut url) = Url::parse(probe_url_str) else {
+            return false;
+        };
+        url.query_pairs_mut().append_pair("accessToken", token);
         let res = self.context.http_client.client.head(url).send().await;
         match res {
             Ok(response) => {

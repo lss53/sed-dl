@@ -73,7 +73,12 @@ pub struct Cli {
     #[arg(long, default_value_t = constants::DEFAULT_SELECTION.to_string(), value_name = "SELECTION", help_heading = "Options")]
     pub select: String,
     /// 按文件扩展名过滤，只下载指定类型的文件 (例如: pdf,mp3)
-    #[arg(long, value_name = "EXTS", value_delimiter = ',', help_heading = "Options")]
+    #[arg(
+        long,
+        value_name = "EXTS",
+        value_delimiter = ',',
+        help_heading = "Options"
+    )]
     pub filter_ext: Option<Vec<String>>,
     /// [ID模式] 指定资源类型
     #[arg(long, value_enum, help_heading = "Options")] // 将类型改为 value_enum

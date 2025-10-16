@@ -2,15 +2,16 @@
 
 use super::ResourceExtractor;
 use crate::{
+    DownloadJobContext,
     client::RobustClient,
     config::AppConfig,
     constants,
     error::*,
     models::{
-        api::{AudioRelationItem, Tag, TextbookDetailsResponse},
         FileInfo, ResourceCategory,
+        api::{AudioRelationItem, Tag, TextbookDetailsResponse},
     },
-    utils, DownloadJobContext,
+    utils,
 };
 use async_trait::async_trait;
 use itertools::Itertools;
@@ -69,10 +70,9 @@ impl TextbookExtractor {
                 let url_str = item.ti_storages.as_ref()?.first()?;
                 let url = Url::parse(url_str).ok()?;
                 let raw_filename = Path::new(url.path()).file_name()?.to_str()?;
-                let decoded_filename =
-                    percent_encoding::percent_decode(raw_filename.as_bytes())
-                        .decode_utf8_lossy()
-                        .to_string();
+                let decoded_filename = percent_encoding::percent_decode(raw_filename.as_bytes())
+                    .decode_utf8_lossy()
+                    .to_string();
                 let name = if self.is_generic_filename(&decoded_filename) {
                     let title = data
                         .global_title
@@ -156,8 +156,7 @@ impl TextbookExtractor {
                 let audio_path_clone = audio_path.clone();
 
                 if let Some(ti_items) = &item.ti_items {
-                    let grouped_by_format =
-                        ti_items.iter().into_group_map_by(|ti| &ti.ti_format);
+                    let grouped_by_format = ti_items.iter().into_group_map_by(|ti| &ti.ti_format);
                     grouped_by_format
                         .into_iter()
                         .filter_map(|(format, group)| {
@@ -168,13 +167,16 @@ impl TextbookExtractor {
                             let best_ti = downloadable_group
                                 .iter()
                                 .find(|ti| {
-                                    ti.ti_file_flag.as_deref().is_some_and(|f| !f.contains("clip"))
+                                    ti.ti_file_flag
+                                        .as_deref()
+                                        .is_some_and(|f| !f.contains("clip"))
                                 })
                                 .or_else(|| downloadable_group.first())
                                 .copied()?;
                             let url = best_ti.ti_storages.as_ref()?.first()?;
                             Some(FileInfo {
-                                filepath: audio_path_clone.join(format!("{}.{}", base_name, format)),
+                                filepath: audio_path_clone
+                                    .join(format!("{}.{}", base_name, format)),
                                 url: url.clone(),
                                 ti_md5: best_ti.ti_md5.clone(),
                                 ti_size: best_ti.ti_size,
@@ -248,20 +250,10 @@ impl ResourceExtractor for TextbookExtractor {
             .extract_audio_info(resource_id, base_path, textbook_basename)
             .await?;
         pdf_files.extend(audio_files);
-        info!(
-            "为教材 '{}' 提取到 {} 个文件",
-            resource_id,
-            pdf_files.len()
-        );
-        debug!(
-            "Extractor 返回的原始文件列表 (共 {} 项):",
-            pdf_files.len()
-        );
+        info!("为教材 '{}' 提取到 {} 个文件", resource_id, pdf_files.len());
+        debug!("Extractor 返回的原始文件列表 (共 {} 项):", pdf_files.len());
         for (i, item) in pdf_files.iter().enumerate() {
-            debug!(
-                "  [{:03}] Path: {:?}, URL: {}",
-                i, item.filepath, item.url
-            );
+            debug!("  [{:03}] Path: {:?}, URL: {}", i, item.filepath, item.url);
         }
         Ok(pdf_files)
     }

@@ -1,13 +1,13 @@
 // src/downloader/task_runner.rs
 
 use super::task_processor::TaskProcessor;
-use crate::{error::*, models::*, symbols, DownloadJobContext};
-use futures::{stream, StreamExt};
+use crate::{DownloadJobContext, error::*, models::*, symbols};
+use futures::{StreamExt, stream};
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use log::error;
 use std::{
     cmp::min,
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
@@ -73,9 +73,10 @@ async fn run_single_concurrent_task(
                 DownloadStatus::Success | DownloadStatus::Resumed => {
                     context.manager.record_success()
                 }
-                DownloadStatus::Skipped => context
-                    .manager
-                    .record_skip(&result.filename, result.message.as_deref().unwrap_or("文件已存在")),
+                DownloadStatus::Skipped => context.manager.record_skip(
+                    &result.filename,
+                    result.message.as_deref().unwrap_or("文件已存在"),
+                ),
                 _ => context
                     .manager
                     .record_failure(&result.filename, result.status),
@@ -99,9 +100,7 @@ async fn run_single_concurrent_task(
                         "\n{} {} {}",
                         symbol,
                         task_name,
-                        color_fn(
-                            format!("失败: {} (详情: {})", default_msg, err_msg).into()
-                        )
+                        color_fn(format!("失败: {} (详情: {})", default_msg, err_msg).into())
                     )
                 } else {
                     format!("{} {}", symbol, task_name)

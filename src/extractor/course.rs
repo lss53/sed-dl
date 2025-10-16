@@ -1,13 +1,29 @@
 // src/extractor/course.rs
 
-use super::{chapter_resolver::ChapterTreeResolver, textbook::TextbookExtractor, utils as extractor_utils, ResourceExtractor};
+use super::{
+    ResourceExtractor, chapter_resolver::ChapterTreeResolver, textbook::TextbookExtractor,
+    utils as extractor_utils,
+};
 use crate::{
-    client::RobustClient, config::AppConfig, constants, error::*, models::{api::{CourseDetailsResponse, CourseResource}, FileInfo}, symbols, utils, DownloadJobContext,
+    DownloadJobContext,
+    client::RobustClient,
+    config::AppConfig,
+    constants,
+    error::*,
+    models::{
+        FileInfo,
+        api::{CourseDetailsResponse, CourseResource},
+    },
+    symbols, utils,
 };
 use async_trait::async_trait;
 use log::{debug, info, trace, warn};
 use regex::Regex;
-use std::{collections::HashMap, path::{Path, PathBuf}, sync::{Arc, LazyLock}};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::{Arc, LazyLock},
+};
 
 static REF_INDEX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([\d,*]+)\]$").unwrap());
 
@@ -19,7 +35,11 @@ pub struct CourseExtractor {
 }
 
 impl CourseExtractor {
-    pub fn new(http_client: Arc<RobustClient>, config: Arc<AppConfig>, url_template: String) -> Self {
+    pub fn new(
+        http_client: Arc<RobustClient>,
+        config: Arc<AppConfig>,
+        url_template: String,
+    ) -> Self {
         Self {
             http_client: http_client.clone(),
             config: config.clone(),
@@ -28,19 +48,38 @@ impl CourseExtractor {
         }
     }
 
-    async fn get_base_directory(&self, data: &CourseDetailsResponse, context: &DownloadJobContext) -> PathBuf {
-        if context.args.flat { return PathBuf::new(); }
+    async fn get_base_directory(
+        &self,
+        data: &CourseDetailsResponse,
+        context: &DownloadJobContext,
+    ) -> PathBuf {
+        if context.args.flat {
+            return PathBuf::new();
+        }
         let course_title = &data.global_title.zh_cn;
-        let textbook_path = TextbookExtractor::new(self.http_client.clone(), self.config.clone()).build_resource_path(data.tag_list.as_deref(), context);
+        let textbook_path = TextbookExtractor::new(self.http_client.clone(), self.config.clone())
+            .build_resource_path(data.tag_list.as_deref(), context);
         let mut full_chapter_path = PathBuf::new();
-        if let (Some(tm_info), Some(path_str)) = (&data.custom_properties.teachingmaterial_info, data.chapter_paths.as_ref().and_then(|p| p.first())) {
-             if let Ok(path) = self.chapter_resolver.get_full_chapter_path(&tm_info.id, path_str).await {
+        if let (Some(tm_info), Some(path_str)) = (
+            &data.custom_properties.teachingmaterial_info,
+            data.chapter_paths.as_ref().and_then(|p| p.first()),
+        ) {
+            if let Ok(path) = self
+                .chapter_resolver
+                .get_full_chapter_path(&tm_info.id, path_str)
+                .await
+            {
                 full_chapter_path = path;
             }
         }
         let course_title_sanitized = utils::sanitize_filename(course_title);
-        let parent_path = if full_chapter_path.file_name().and_then(|s| s.to_str()) == Some(&course_title_sanitized) {
-            full_chapter_path.parent().unwrap_or_else(|| Path::new("")).to_path_buf()
+        let parent_path = if full_chapter_path.file_name().and_then(|s| s.to_str())
+            == Some(&course_title_sanitized)
+        {
+            full_chapter_path
+                .parent()
+                .unwrap_or_else(|| Path::new(""))
+                .to_path_buf()
         } else {
             full_chapter_path
         };
@@ -57,23 +96,35 @@ impl CourseExtractor {
         base_dir: &Path,
         teacher_map: &HashMap<usize, String>,
     ) -> Vec<FileInfo> {
-        let type_name = utils::sanitize_filename(resource.custom_properties.alias_name.as_deref().unwrap_or(""));
-        let teacher = teacher_map.get(&index).cloned().unwrap_or_else(|| constants::UNCLASSIFIED_DIR.to_string());
+        let type_name = utils::sanitize_filename(
+            resource
+                .custom_properties
+                .alias_name
+                .as_deref()
+                .unwrap_or(""),
+        );
+        let teacher = teacher_map
+            .get(&index)
+            .cloned()
+            .unwrap_or_else(|| constants::UNCLASSIFIED_DIR.to_string());
         let base_name = format!("{} - {}", course_title, &type_name);
 
         match resource.resource_type_code.as_str() {
             constants::api::resource_types::ASSETS_VIDEO => {
                 extractor_utils::extract_video_files(resource, &base_name, base_dir, &teacher)
             }
-            constants::api::resource_types::ASSETS_DOCUMENT | 
-            constants::api::resource_types::COURSEWARES |
-            constants::api::resource_types::LESSON_PLANDESIGN => {
+            constants::api::resource_types::ASSETS_DOCUMENT
+            | constants::api::resource_types::COURSEWARES
+            | constants::api::resource_types::LESSON_PLANDESIGN => {
                 if let Some(mut file_info) = extractor_utils::extract_document_file(resource) {
                     let filename = format!("{} - [{}].pdf", &base_name, &teacher);
                     file_info.filepath = base_dir.join(filename);
                     vec![file_info]
                 } else {
-                    info!("在资源 '{}' 中未找到可下载的 PDF 版本，跳过。", &resource.global_title.zh_cn);
+                    info!(
+                        "在资源 '{}' 中未找到可下载的 PDF 版本，跳过。",
+                        &resource.global_title.zh_cn
+                    );
                     vec![]
                 }
             }
@@ -87,30 +138,60 @@ impl CourseExtractor {
     fn parse_res_ref_indices(&self, ref_str: &str, total_resources: usize) -> Option<Vec<usize>> {
         REF_INDEX_RE.captures(ref_str).and_then(|caps| {
             caps.get(1).map(|m| {
-                if m.as_str() == "*" { (0..total_resources).collect() } 
-                else { m.as_str().split(',').filter_map(|s| s.parse::<usize>().ok()).collect() }
+                if m.as_str() == "*" {
+                    (0..total_resources).collect()
+                } else {
+                    m.as_str()
+                        .split(',')
+                        .filter_map(|s| s.parse::<usize>().ok())
+                        .collect()
+                }
             })
         })
     }
 
     fn get_teacher_map(&self, data: &CourseDetailsResponse) -> HashMap<usize, String> {
-        let teacher_id_map: HashMap<_, _> = data.teacher_list.as_deref().unwrap_or_default().iter().map(|t| (t.id.as_str(), t.name.as_str())).collect();
+        let teacher_id_map: HashMap<_, _> = data
+            .teacher_list
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|t| (t.id.as_str(), t.name.as_str()))
+            .collect();
         trace!("教师ID映射: {:?}", teacher_id_map);
         let ids_to_names_str = |ids: &[String]| -> String {
-            let names: Vec<_> = ids.iter().filter_map(|id| teacher_id_map.get(id.as_str()).cloned()).collect();
-            if names.is_empty() { constants::UNCLASSIFIED_DIR.to_string() } else { names.join(", ") }
+            let names: Vec<_> = ids
+                .iter()
+                .filter_map(|id| teacher_id_map.get(id.as_str()).cloned())
+                .collect();
+            if names.is_empty() {
+                constants::UNCLASSIFIED_DIR.to_string()
+            } else {
+                names.join(", ")
+            }
         };
         let mut resource_teacher_map = HashMap::new();
-        
-        // [FIXED] 直接在 Vec 上调用 .len()
+
         let total_resources = data.relations.resources.len();
-        
-        if let Some(relations) = data.resource_structure.as_ref().and_then(|s| s.relations.as_ref()) {
+
+        if let Some(relations) = data
+            .resource_structure
+            .as_ref()
+            .and_then(|s| s.relations.as_ref())
+        {
             for relation in relations {
-                if let (Some(teacher_ids), Some(refs)) = (&relation.custom_properties.teacher_ids, &relation.res_ref) {
+                if let (Some(teacher_ids), Some(refs)) =
+                    (&relation.custom_properties.teacher_ids, &relation.res_ref)
+                {
                     let teacher_str = ids_to_names_str(teacher_ids);
-                    let indices: Vec<usize> = refs.iter().filter_map(|r| self.parse_res_ref_indices(r, total_resources)).flatten().collect();
-                    for index in indices { resource_teacher_map.insert(index, teacher_str.clone()); }
+                    let indices: Vec<usize> = refs
+                        .iter()
+                        .filter_map(|r| self.parse_res_ref_indices(r, total_resources))
+                        .flatten()
+                        .collect();
+                    for index in indices {
+                        resource_teacher_map.insert(index, teacher_str.clone());
+                    }
                 }
             }
             if !resource_teacher_map.is_empty() {
@@ -118,9 +199,16 @@ impl CourseExtractor {
                 return resource_teacher_map;
             }
         }
-        if let Some(top_level_teacher_ids) = data.custom_properties.lesson_teacher_ids.as_deref().filter(|ids| !ids.is_empty()) {
+        if let Some(top_level_teacher_ids) = data
+            .custom_properties
+            .lesson_teacher_ids
+            .as_deref()
+            .filter(|ids| !ids.is_empty())
+        {
             let teacher_str = ids_to_names_str(top_level_teacher_ids);
-            for i in 0..total_resources { resource_teacher_map.insert(i, teacher_str.clone()); }
+            for i in 0..total_resources {
+                resource_teacher_map.insert(i, teacher_str.clone());
+            }
             debug!("从顶层 custom_properties 成功映射教师信息");
             return resource_teacher_map;
         }
@@ -131,15 +219,22 @@ impl CourseExtractor {
 
 #[async_trait]
 impl ResourceExtractor for CourseExtractor {
-    async fn extract_file_info(&self, resource_id: &str, context: &DownloadJobContext) -> AppResult<Vec<FileInfo>> {
+    async fn extract_file_info(
+        &self,
+        resource_id: &str,
+        context: &DownloadJobContext,
+    ) -> AppResult<Vec<FileInfo>> {
         info!("使用 CourseExtractor 提取资源, ID: {}", resource_id);
-        let data: CourseDetailsResponse = self.http_client.fetch_json(&self.url_template, &[("resource_id", resource_id)]).await?;
-        
+        let data: CourseDetailsResponse = self
+            .http_client
+            .fetch_json(&self.url_template, &[("resource_id", resource_id)])
+            .await?;
+
         let course_title = utils::sanitize_filename(&data.global_title.zh_cn);
-        
+
         let base_dir = self.get_base_directory(&data, context).await;
         let teacher_map = self.get_teacher_map(&data);
-        
+
         let all_resources = &data.relations.resources;
 
         if all_resources.is_empty() {
@@ -148,8 +243,18 @@ impl ResourceExtractor for CourseExtractor {
             return Ok(vec![]);
         }
         debug!("找到 {} 个相关资源。", all_resources.len());
-        let results: Vec<FileInfo> = all_resources.iter().enumerate()
-            .flat_map(|(index, resource)| self.process_single_resource(resource, index, &course_title, &base_dir, &teacher_map))
+        let results: Vec<FileInfo> = all_resources
+            .iter()
+            .enumerate()
+            .flat_map(|(index, resource)| {
+                self.process_single_resource(
+                    resource,
+                    index,
+                    &course_title,
+                    &base_dir,
+                    &teacher_map,
+                )
+            })
             .collect();
         info!("为课程 '{}' 提取到 {} 个文件", resource_id, results.len());
         Ok(results)

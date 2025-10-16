@@ -1,9 +1,9 @@
 // src/extractor/utils.rs
 
-use crate::models::{api::CourseResource, FileInfo, ResourceCategory};
+use crate::models::{FileInfo, ResourceCategory, api::CourseResource};
+use itertools::Itertools;
 use log::debug;
 use std::path::Path;
-use itertools::Itertools;
 
 /// 通用函数：从一个视频资源中提取所有可下载的 m3u8 流
 pub fn extract_video_files(
@@ -31,11 +31,11 @@ pub fn extract_video_files(
                         .and_then(|reqs| reqs.iter().find(|r| r.name == "Height"))
                         .map(|h| h.value.as_str())
                         .unwrap_or("HD"); // 找不到则默认为 "HD"
-                    
+
                     // 文件名不带 'p'
                     let filename =
                         format!("{} [{}] - [{}].ts", base_name, quality_str, teacher_name);
-                    
+
                     let estimated_size = item
                         .custom_properties
                         .as_ref()
@@ -45,10 +45,9 @@ pub fn extract_video_files(
 
                     debug!(
                         "M3U8 提取: 文件名='{}', 从JSON提取的预估大小 (total_size): {:?}",
-                        filename,
-                        estimated_size
+                        filename, estimated_size
                     );
-                    
+
                     FileInfo {
                         filepath: base_path.join(filename),
                         url: url.clone(),
@@ -60,11 +59,12 @@ pub fn extract_video_files(
                 })
         })
         .collect();
-    
+
     // 去重逻辑
     streams.sort_by_key(|s| {
         // 解析不带 'p' 的数字进行排序
-        s.filepath.to_string_lossy()
+        s.filepath
+            .to_string_lossy()
             .split('[')
             .nth(1)
             .and_then(|part| part.split(']').next())
@@ -77,9 +77,7 @@ pub fn extract_video_files(
 }
 
 /// 通用函数：从一个文档/课件资源中提取唯一的 PDF 文件
-pub fn extract_document_file(
-    resource: &CourseResource,
-) -> Option<FileInfo> {
+pub fn extract_document_file(resource: &CourseResource) -> Option<FileInfo> {
     resource
         .ti_items
         .as_deref()
@@ -91,15 +89,13 @@ pub fn extract_document_file(
                 .ti_storages
                 .as_ref()
                 .and_then(|s| s.first())
-                .map(|url| {
-                    FileInfo {
-                        filepath: std::path::PathBuf::new(), 
-                        url: url.clone(),
-                        ti_md5: pdf_item.ti_md5.clone(),
-                        ti_size: pdf_item.ti_size,
-                        date: Some(resource.update_time),
-                        category: ResourceCategory::Document,
-                    }
+                .map(|url| FileInfo {
+                    filepath: std::path::PathBuf::new(),
+                    url: url.clone(),
+                    ti_md5: pdf_item.ti_md5.clone(),
+                    ti_size: pdf_item.ti_size,
+                    date: Some(resource.update_time),
+                    category: ResourceCategory::Document,
                 })
         })
 }
