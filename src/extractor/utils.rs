@@ -30,9 +30,9 @@ pub fn extract_video_files(
                         .and_then(|p| p.requirements.as_ref())
                         .and_then(|reqs| reqs.iter().find(|r| r.name == "Height"))
                         .map(|h| h.value.as_str())
-                        .unwrap_or("HD"); // 找不到则默认为 "HD"
+                        .unwrap_or("未知"); // 找不到则默认为 "未知"，避免歧义
 
-                    // 文件名不带 'p'
+                    // 统一文件名格式为 "[清晰度]"，与后续解析逻辑保持一致
                     let filename =
                         format!("{} [{}] - [{}].ts", base_name, quality_str, teacher_name);
 

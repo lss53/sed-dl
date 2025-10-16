@@ -72,9 +72,17 @@ impl ExternalConfig {
             ),
         ]);
 
+        // 为 NetworkConfig 提供一组稳健的默认值
+        let network_config = NetworkConfig {
+            server_prefixes: Some(vec!["s-file-1".into(), "s-file-2".into(), "s-file-3".into()]),
+            connect_timeout_secs: Some(10),
+            timeout_secs: Some(60), // 推荐把 60 秒设为超时默认值
+            max_retries: Some(3),
+        };
+
         Self {
             accesstoken: None,
-            network: NetworkConfig::default(),
+            network: network_config,
             url_templates,
             api_endpoints,
         }
@@ -152,12 +160,12 @@ impl AppConfig {
             server_prefixes: external_config
                 .network
                 .server_prefixes
-                .unwrap_or_else(|| vec!["s-file-1".into(), "s-file-2".into(), "s-file-3".into()]),
+                .unwrap_or_default(),
             user_agent: constants::USER_AGENT.into(),
             connect_timeout: Duration::from_secs(
-                external_config.network.connect_timeout_secs.unwrap_or(5),
+                external_config.network.connect_timeout_secs.unwrap_or(10),
             ),
-            timeout: Duration::from_secs(external_config.network.timeout_secs.unwrap_or(15)),
+            timeout: Duration::from_secs(external_config.network.timeout_secs.unwrap_or(60)),
             max_retries: external_config.network.max_retries.unwrap_or(3),
             api_endpoints,
             url_templates: external_config.url_templates,

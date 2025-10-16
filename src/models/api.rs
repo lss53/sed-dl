@@ -61,7 +61,6 @@ pub struct CourseDetailsCustomProperties {
 #[derive(Deserialize, Debug, Clone)]
 pub struct CourseResourceCustomProperties {
     pub alias_name: Option<String>,
-    #[serde(default)]
     pub height: Option<String>, // 新增 height 字段
 }
 

@@ -141,25 +141,27 @@ impl DownloadManager {
             );
             println!("{}", summary);
         }
+    }
+}
 
-        fn print_grouped_report(
-            items: &[(String, String)],
-            color_fn: fn(ColoredString) -> ColoredString,
-        ) {
-            let mut grouped: HashMap<&String, Vec<&String>> = HashMap::new();
-            for (filename, reason) in items {
-                grouped.entry(reason).or_default().push(filename);
-            }
-            let mut sorted_reasons: Vec<_> = grouped.keys().collect();
-            sorted_reasons.sort();
-            for reason in sorted_reasons {
-                println!("  - {}", color_fn(format!("原因: {}", reason).into()));
-                let mut filenames = grouped.get(reason).unwrap().clone();
-                filenames.sort();
-                for filename in filenames {
-                    println!("    - {}", filename);
-                }
-            }
+// 模块内的私有辅助函数
+fn print_grouped_report(
+    items: &[(String, String)],
+    color_fn: fn(ColoredString) -> ColoredString,
+) {
+    let mut grouped: HashMap<&String, Vec<&String>> = HashMap::new();
+    for (filename, reason) in items {
+        grouped.entry(reason).or_default().push(filename);
+    }
+    let mut sorted_reasons: Vec<_> = grouped.keys().collect();
+    sorted_reasons.sort();
+    for reason in sorted_reasons {
+        println!("  - {}", color_fn(format!("原因: {}", reason).into()));
+        let mut filenames = grouped.get(reason).unwrap().clone();
+        filenames.sort();
+        for filename in filenames {
+            println!("    - {}", filename);
         }
     }
 }
+    
