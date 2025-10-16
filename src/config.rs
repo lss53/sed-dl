@@ -7,19 +7,10 @@ use crate::{cli::Cli, constants, error::AppResult};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 
-// 1. 修改 ExtractorTypeForFile 枚举
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "PascalCase")]
-pub enum ExtractorTypeForFile {
-    Textbook,
-    Course,
-    SyncClassroom, // <--- 新增
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiEndpointConfigFromFile {
     pub id_param: String,
-    pub extractor: ExtractorTypeForFile,
+    pub extractor: ResourceExtractorType,
     pub url_template_keys: HashMap<String, String>,
 }
 
@@ -31,7 +22,6 @@ pub struct NetworkConfig {
     pub max_retries: Option<u32>,
 }
 
-// 2. 从 ExternalConfig 中移除 allowed_formats
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExternalConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -43,7 +33,6 @@ pub struct ExternalConfig {
 }
 
 impl ExternalConfig {
-    // 3. 修改默认配置
     pub(crate) fn default_app_config() -> Self {
         let url_templates = HashMap::from([
             ("TEXTBOOK_DETAILS".into(), "https://{prefix}.ykt.cbern.com.cn/zxx/ndrv2/resources/tch_material/details/{resource_id}.json".into()),
@@ -58,7 +47,7 @@ impl ExternalConfig {
                 "tchMaterial".into(),
                 ApiEndpointConfigFromFile {
                     id_param: "contentId".into(),
-                    extractor: ExtractorTypeForFile::Textbook,
+                    extractor: ResourceExtractorType::Textbook,
                     url_template_keys: HashMap::from([
                         ("textbook".into(), "TEXTBOOK_DETAILS".into()),
                         ("audio".into(), "TEXTBOOK_AUDIO".into()),
@@ -69,7 +58,7 @@ impl ExternalConfig {
                 "qualityCourse".into(),
                 ApiEndpointConfigFromFile {
                     id_param: "courseId".into(),
-                    extractor: ExtractorTypeForFile::Course,
+                    extractor: ResourceExtractorType::Course,
                     url_template_keys: HashMap::from([("main".into(), "COURSE_QUALITY".into())]),
                 },
             ),
@@ -77,7 +66,7 @@ impl ExternalConfig {
                 "syncClassroom/classActivity".into(),
                 ApiEndpointConfigFromFile {
                     id_param: "activityId".into(),
-                    extractor: ExtractorTypeForFile::SyncClassroom, // <--- 修改 extractor 类型
+                    extractor: ResourceExtractorType::SyncClassroom,
                     url_template_keys: HashMap::from([("main".into(), "COURSE_SYNC".into())]),
                 },
             ),
@@ -99,15 +88,15 @@ pub struct ApiEndpointConfig {
     pub url_template_keys: HashMap<String, String>,
 }
 
-// 4. 扩展 ResourceExtractorType 枚举
-#[derive(Debug, Clone, Copy)]
+// 为 ResourceExtractorType 添加 serde 属性，使其可以直接从 JSON 文件中反序列化
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub enum ResourceExtractorType {
     Textbook,
     Course,
-    SyncClassroom, // <--- 新增
+    SyncClassroom,
 }
 
-// 5. 从 AppConfig 移除 allowed_formats
 #[derive(Debug, Clone)]
 pub struct AppConfig {
     pub max_workers: usize,
@@ -120,7 +109,6 @@ pub struct AppConfig {
     pub api_endpoints: HashMap<String, ApiEndpointConfig>,
     pub url_templates: HashMap<String, String>,
 }
-
 
 #[cfg(feature = "testing")]
 impl Default for AppConfig {
@@ -139,7 +127,6 @@ impl Default for AppConfig {
     }
 }
 
-// 6. 修改 AppConfig::new() 实现
 impl AppConfig {
     pub fn new(args: &Cli) -> AppResult<Self> {
         let external_config = load_or_create_external_config()?;
@@ -148,17 +135,11 @@ impl AppConfig {
             .api_endpoints
             .into_iter()
             .map(|(key, file_config)| {
-                let extractor_type = match file_config.extractor {
-                    ExtractorTypeForFile::Textbook => ResourceExtractorType::Textbook,
-                    ExtractorTypeForFile::Course => ResourceExtractorType::Course,
-                    ExtractorTypeForFile::SyncClassroom => ResourceExtractorType::SyncClassroom, // <--- 新增分支
-                };
-
                 Ok((
                     key,
                     ApiEndpointConfig {
                         id_param: file_config.id_param,
-                        extractor: extractor_type,
+                        extractor: file_config.extractor,
                         url_template_keys: file_config.url_template_keys,
                     },
                 ))
