@@ -1,16 +1,17 @@
 // src/extractor/sync_classroom.rs
 
-use super::{utils as extractor_utils, ResourceExtractor};
+use super::{ResourceExtractor, utils as extractor_utils};
 use crate::{
+    DownloadJobContext,
     client::RobustClient,
     config::AppConfig,
     constants,
     error::*,
     models::{
-        api::{CourseResource, SyncClassroomResponse},
         FileInfo,
+        api::{CourseResource, SyncClassroomResponse},
     },
-    utils, DownloadJobContext,
+    utils,
 };
 use async_trait::async_trait;
 use log::info;
@@ -40,11 +41,7 @@ impl SyncClassroomExtractor {
         }
     }
 
-    fn parse_res_ref_indices(
-        &self,
-        ref_str: &str,
-        total_resources: usize,
-    ) -> Option<Vec<usize>> {
+    fn parse_res_ref_indices(&self, ref_str: &str, total_resources: usize) -> Option<Vec<usize>> {
         RES_REF_RE.captures(ref_str).and_then(|caps| {
             caps.get(1).map(|m| {
                 if m.as_str() == "*" {
@@ -82,9 +79,7 @@ impl SyncClassroomExtractor {
             constants::api::resource_types::ASSETS_DOCUMENT
             | constants::api::resource_types::COURSEWARES
             | constants::api::resource_types::LESSON_PLANDESIGN => {
-                if let Some(mut file_info) =
-                    extractor_utils::extract_document_file(resource)
-                {
+                if let Some(mut file_info) = extractor_utils::extract_document_file(resource) {
                     let filename = format!("{} - [{}].pdf", &base_name, teacher_name);
                     file_info.filepath = base_path.join(filename);
                     vec![file_info]
@@ -105,10 +100,7 @@ impl ResourceExtractor for SyncClassroomExtractor {
         resource_id: &str,
         context: &DownloadJobContext,
     ) -> AppResult<Vec<FileInfo>> {
-        info!(
-            "使用 SyncClassroomExtractor 提取资源, ID: {}",
-            resource_id
-        );
+        info!("使用 SyncClassroomExtractor 提取资源, ID: {}", resource_id);
         let data: SyncClassroomResponse = self
             .http_client
             .fetch_json(&self.url_template, &[("resource_id", resource_id)])
@@ -119,14 +111,16 @@ impl ResourceExtractor for SyncClassroomExtractor {
             .iter()
             .map(|t| (t.id.as_str(), t.name.as_str()))
             .collect();
-        
-        // [FIXED] 修正字段名
+
         let all_resources = &data.relations.resources;
 
         let mut all_files = Vec::new();
 
-        // [FIXED] 修正对 Option 的访问
-        if let Some(lessons) = data.resource_structure.as_ref().and_then(|rs| rs.relations.as_ref()) {
+        if let Some(lessons) = data
+            .resource_structure
+            .as_ref()
+            .and_then(|rs| rs.relations.as_ref())
+        {
             for lesson in lessons {
                 let lesson_path = if context.args.flat {
                     Path::new("").to_path_buf()
@@ -134,7 +128,6 @@ impl ResourceExtractor for SyncClassroomExtractor {
                     Path::new(&utils::sanitize_filename(&lesson.title)).to_path_buf()
                 };
 
-                // [FIXED] 修正对 Option 的访问
                 let teacher_name = lesson
                     .custom_properties
                     .teacher_ids
@@ -143,9 +136,10 @@ impl ResourceExtractor for SyncClassroomExtractor {
                     .and_then(|id| teacher_map.get(id.as_str()))
                     .map_or("未知教师", |&name| name);
 
-                // [FIXED] 修正迭代逻辑
                 let indices: Vec<usize> = lesson
-                    .res_ref.as_deref().unwrap_or_default()
+                    .res_ref
+                    .as_deref()
+                    .unwrap_or_default()
                     .iter()
                     .filter_map(|r| self.parse_res_ref_indices(r, all_resources.len()))
                     .flatten()
@@ -153,7 +147,11 @@ impl ResourceExtractor for SyncClassroomExtractor {
 
                 for index in indices {
                     if let Some(resource) = all_resources.get(index) {
-                        all_files.extend(self.process_resource(resource, &lesson_path, teacher_name));
+                        all_files.extend(self.process_resource(
+                            resource,
+                            &lesson_path,
+                            teacher_name,
+                        ));
                     }
                 }
             }
