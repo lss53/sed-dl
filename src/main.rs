@@ -163,6 +163,23 @@ async fn main() {
                 );
                 std::process::exit(1);
             }
+            // 为 API 解析失败添加专门的、更友好的错误处理分支。
+            AppError::ApiParseFailed { url, source } => {
+                error!("API响应解析失败 at {}: {}", url, source);
+                eprintln!(
+                    "\n{} {}",
+                    *symbols::ERROR,
+                    "程序无法理解来自服务器的回应。".red()
+                );
+                eprintln!("   - {} {}", "请求地址:".bold(), url);
+                eprintln!("   - {} {}", "错误详情:".bold(), source);
+                eprintln!(
+                    "\n{} {}",
+                    *symbols::INFO,
+                    "这通常意味着目标网站的API接口已更新。请尝试更新本程序或联系开发者。"
+                );
+                std::process::exit(1);
+            }
             _ => {
                 // 其他所有错误
                 error!("程序执行出错: {}", e);
