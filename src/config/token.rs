@@ -64,31 +64,121 @@ pub fn save_token(token: &str) -> AppResult<()> {
     Ok(())
 }
 
-pub fn load_token_from_config() -> Option<String> {
+pub(crate) fn load_token_from_config() -> Option<String> {
     load_or_create_external_config()
         .ok()
         .and_then(|config| config.accesstoken)
 }
 
-pub fn resolve_token(cli_token: Option<&str>) -> (Option<String>, String) {
-    if let Some(token) = cli_token
-        && !token.is_empty()
-    {
+// 2. 创建可测试的 `resolve_token_with_loader` 函数
+pub(crate) fn resolve_token_with_loader<F>(
+    cli_token: Option<&str>,
+    env_var: Result<String, std::env::VarError>,
+    config_loader: F,
+) -> (Option<String>, String)
+where
+    F: Fn() -> Option<String>,
+{
+    if let Some(token) = cli_token.filter(|s| !s.is_empty()) {
         debug!("使用来自命令行参数的 Token");
         return (Some(token.to_string()), "命令行参数".to_string());
     }
-    if let Ok(token) = std::env::var("ACCESS_TOKEN")
-        && !token.is_empty()
-    {
-        debug!("使用来自环境变量 ACCESS_TOKEN 的 Token");
-        return (Some(token), "环境变量 (ACCESS_TOKEN)".to_string());
+    
+    if let Ok(token) = env_var {
+        if !token.is_empty() {
+            debug!("使用来自环境变量 ACCESS_TOKEN 的 Token");
+            return (Some(token), "环境变量 (ACCESS_TOKEN)".to_string());
+        }
     }
-    if let Some(token) = load_token_from_config()
-        && !token.is_empty()
-    {
+    
+    if let Some(token) = config_loader().filter(|s| !s.is_empty()) {
         debug!("使用来自本地配置文件的 Token");
         return (Some(token), "本地Token文件".to_string());
     }
     debug!("未在任何位置找到可用的 Token");
     (None, "未找到".to_string())
+}
+
+// 创建 `resolve_token` 作为对可测试函数的封装，供应用程序使用
+pub fn resolve_token(cli_token: Option<&str>) -> (Option<String>, String) {
+    resolve_token_with_loader(
+        cli_token,
+        std::env::var("ACCESS_TOKEN"),
+        load_token_from_config,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- 模拟加载器 ---
+    fn no_config_token() -> Option<String> {
+        None
+    }
+
+    fn some_config_token() -> Option<String> {
+        Some("config_token".to_string())
+    }
+
+    // --- 测试用例 ---
+
+    #[test]
+    fn test_resolve_token_no_sources() {
+        let (token, source) =
+            resolve_token_with_loader(None, Err(std::env::VarError::NotPresent), no_config_token);
+        assert_eq!(token, None);
+        assert_eq!(source, "未找到");
+    }
+
+    #[test]
+    fn test_resolve_token_from_config_only() {
+        let (token, source) = resolve_token_with_loader(
+            None,
+            Err(std::env::VarError::NotPresent),
+            some_config_token,
+        );
+        assert_eq!(token, Some("config_token".to_string()));
+        assert_eq!(source, "本地Token文件");
+    }
+
+    #[test]
+    fn test_resolve_token_from_env_only() {
+        let (token, source) = resolve_token_with_loader(
+            None,
+            Ok("env_token".to_string()),
+            some_config_token, // 即使 config 有，也应该被 env 覆盖
+        );
+        assert_eq!(token, Some("env_token".to_string()));
+        assert_eq!(source, "环境变量 (ACCESS_TOKEN)");
+    }
+
+    #[test]
+    fn test_resolve_token_from_cli_only() {
+        let (token, source) = resolve_token_with_loader(
+            Some("cli_token"),
+            Ok("env_token".to_string()), // 即使 env 和 config 有，也应该被 cli 覆盖
+            some_config_token,
+        );
+        assert_eq!(token, Some("cli_token".to_string()));
+        assert_eq!(source, "命令行参数");
+    }
+
+    #[test]
+    fn test_resolve_token_empty_strings_are_ignored() {
+        // 测试空的 cli token 不会覆盖有效的 env token
+        let (token, source) = resolve_token_with_loader(
+            Some(""),
+            Ok("env_token".to_string()),
+            some_config_token,
+        );
+        assert_eq!(token, Some("env_token".to_string()));
+        assert_eq!(source, "环境变量 (ACCESS_TOKEN)");
+
+        // 测试空的 env token 不会覆盖有效的 config token
+        let (token, source) =
+            resolve_token_with_loader(None, Ok("".to_string()), some_config_token);
+        assert_eq!(token, Some("config_token".to_string()));
+        assert_eq!(source, "本地Token文件");
+    }
 }
