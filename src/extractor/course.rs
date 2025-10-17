@@ -25,7 +25,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-static REF_INDEX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([\d,*]+)\]$").unwrap());
+static REF_INDEX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([\d,\*]+)\]").unwrap());
 
 pub struct CourseExtractor {
     http_client: Arc<RobustClient>,
