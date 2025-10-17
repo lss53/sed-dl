@@ -62,9 +62,7 @@ impl TextbookExtractor {
             .unwrap_or_default()
             .iter()
             .filter_map(|item| {
-                if item.ti_file_flag.as_deref() != Some("source")
-                    || item.ti_format != constants::api::resource_formats::PDF
-                {
+                if !item.ti_format.eq_ignore_ascii_case(constants::api::resource_formats::PDF) {
                     return None;
                 }
                 let url_str = item.ti_storages.as_ref()?.first()?;

@@ -1,0 +1,29 @@
+[
+  {
+    "global_title": { "zh-CN": "第一课 课文朗读" },
+    "update_time": "2024-01-02T12:00:00+08:00",
+    "ti_items": [
+      {
+        "ti_format": "mp3",
+        "ti_storages": ["https://example.com/lesson1.mp3"],
+        "ti_size": 1024
+      },
+      {
+        "ti_format": "m4a",
+        "ti_storages": ["https://example.com/lesson1.m4a"],
+        "ti_size": 800
+      }
+    ]
+  },
+  {
+    "global_title": { "zh-CN": "第二课 生字" },
+    "update_time": "2024-01-03T12:00:00+08:00",
+    "ti_items": [
+      {
+        "ti_format": "mp3",
+        "ti_storages": ["https://example.com/lesson2.mp3"],
+        "ti_size": 2048
+      }
+    ]
+  }
+]

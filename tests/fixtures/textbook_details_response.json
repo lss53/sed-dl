@@ -1,0 +1,21 @@
+{
+  "id": "fake-textbook-id",
+  "global_title": {
+    "zh-CN": "语文一年级上册"
+  },
+  "update_time": "2024-01-01T12:00:00+08:00",
+  "tag_list": [
+    { "tag_dimension_id": "zxxxd", "tag_name": "小学" },
+    { "tag_dimension_id": "zxxnj", "tag_name": "一年级" },
+    { "tag_dimension_id": "zxxxk", "tag_name": "语文" }
+  ],
+  "ti_items": [
+    {
+      "ti_format": "pdf",
+      "ti_file_flag": "source",
+      "ti_storages": ["https://example.com/语文一年级上册.pdf"],
+      "ti_md5": "d41d8cd98f00b204e9800998ecf8427e",
+      "ti_size": 123456
+    }
+  ]
+}
