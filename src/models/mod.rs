@@ -9,7 +9,7 @@ use colored::{ColoredString, Colorize};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-// 1. 定义 DownloadStatus 枚举 (只定义一次)
+// 1. 定义 DownloadStatus 枚举
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DownloadStatus {
     Success,
@@ -105,23 +105,17 @@ pub enum DownloadAction {
     DownloadNew,
 }
 
-// 4. 定义 ResourceCategory (只定义一次)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+// 4. 定义 ResourceCategory
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ResourceCategory {
     Video,
     Audio,
     Document,
+    #[default]
     Other,
 }
 
-// 5. 为 ResourceCategory 实现 Default (只实现一次)
-impl Default for ResourceCategory {
-    fn default() -> Self {
-        ResourceCategory::Other
-    }
-}
-
-// 6. 修正 FileInfo 定义
+// 5. 修正 FileInfo 定义
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FileInfo {
     pub filepath: PathBuf,

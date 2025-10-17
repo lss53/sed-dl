@@ -63,15 +63,15 @@ impl CourseExtractor {
         if let (Some(tm_info), Some(path_str)) = (
             &data.custom_properties.teachingmaterial_info,
             data.chapter_paths.as_ref().and_then(|p| p.first()),
-        ) {
-            if let Ok(path) = self
+        ) 
+            && let Ok(path) = self
                 .chapter_resolver
                 .get_full_chapter_path(&tm_info.id, path_str)
                 .await
             {
                 full_chapter_path = path;
             }
-        }
+        
         let course_title_sanitized = utils::sanitize_filename(course_title);
         let parent_path = if full_chapter_path.file_name().and_then(|s| s.to_str())
             == Some(&course_title_sanitized)

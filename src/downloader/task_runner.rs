@@ -86,11 +86,10 @@ async fn run_single_concurrent_task(
             // 更新进度条
             if !use_byte_progress {
                 main_pbar.inc(1);
-            } else if result.status == DownloadStatus::Skipped {
-                if let Some(skipped_size) = task.ti_size {
+            } else if result.status == DownloadStatus::Skipped
+                && let Some(skipped_size) = task.ti_size {
                     main_pbar.inc(skipped_size);
                 }
-            }
 
             // 打印单项结果
             if result.status != DownloadStatus::Skipped {

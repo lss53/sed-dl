@@ -52,11 +52,11 @@ impl ResourceDownloader {
                                 continue;
                             }
                             *self.context.token.lock().await = new_token.clone();
-                            if ui::confirm("是否保存此新 Token 以便后续使用?", false) {
-                                if let Err(e) = config::token::save_token(&new_token) {
-                                    error!("尝试保存新Token时失败: {}", e);
-                                    eprintln!("{} 保存新Token失败: {}", *symbols::WARN, e);
-                                }
+                            if ui::confirm("是否保存此新 Token 以便后续使用?", false)
+                                && let Err(e) = config::token::save_token(&new_token)
+                            {
+                                error!("尝试保存新Token时失败: {}", e);
+                                eprintln!("{} 保存新Token失败: {}", *symbols::WARN, e);
                             }
                             break;
                         }
@@ -94,11 +94,10 @@ impl ResourceDownloader {
                         task,
                         &self.context.args,
                     )
+                    && action != DownloadAction::Skip
                 {
-                    if action != DownloadAction::Skip {
-                        remaining_tasks.push(task.clone());
-                        remaining_filenames.push(task.filepath.to_string_lossy().into_owned());
-                    }
+                    remaining_tasks.push(task.clone());
+                    remaining_filenames.push(task.filepath.to_string_lossy().into_owned());
                 }
             }
             if remaining_tasks.is_empty() {

@@ -84,11 +84,9 @@ where
         return (Some(token.to_string()), "命令行参数".to_string());
     }
     
-    if let Ok(token) = env_var {
-        if !token.is_empty() {
-            debug!("使用来自环境变量 ACCESS_TOKEN 的 Token");
-            return (Some(token), "环境变量 (ACCESS_TOKEN)".to_string());
-        }
+    if let Ok(token) = env_var && !token.is_empty() {
+        debug!("使用来自环境变量 ACCESS_TOKEN 的 Token");
+        return (Some(token), "环境变量 (ACCESS_TOKEN)".to_string());
     }
     
     if let Some(token) = config_loader().filter(|s| !s.is_empty()) {

@@ -107,10 +107,10 @@ impl<'a> ItemNegotiator<'a> {
             self.sort_videos_by_quality_desc(&mut group); // <-- 使用辅助函数
 
             for choice in &user_choices {
-                if let Some(file) = self.select_stream_with_fallback(&group, choice) {
-                    if !selected_videos.iter().any(|v: &FileInfo| v.url == file.url) {
-                        selected_videos.push(file.clone());
-                    }
+                if let Some(file) = self.select_stream_with_fallback(&group, choice)
+                    && !selected_videos.iter().any(|v: &FileInfo| v.url == file.url)
+                {
+                    selected_videos.push(file.clone());
                 }
             }
         }
@@ -195,7 +195,7 @@ impl<'a> ItemNegotiator<'a> {
                         .captures(&f.filepath.to_string_lossy())
                         .and_then(|caps| caps.get(1))
                         .and_then(|m| m.as_str().parse::<u32>().ok())
-                        .map_or(false, |stream_num| stream_num == target_num)
+                        == Some(target_num)
                 })
             }),
         }
@@ -246,10 +246,10 @@ impl<'a> ItemNegotiator<'a> {
 
         for (_, group) in audio_groups {
             for file in group {
-                if let Some(ext) = file.filepath.extension().and_then(|e| e.to_str()) {
-                    if lower_choices.contains(&ext.to_lowercase()) {
-                        final_items.push(file);
-                    }
+                if let Some(ext) = file.filepath.extension().and_then(|e| e.to_str())
+                    && lower_choices.contains(&ext.to_lowercase())
+                {
+                    final_items.push(file);
                 }
             }
         }
@@ -267,12 +267,12 @@ impl<'a> ItemNegotiator<'a> {
         let selected_format = self.context.args.audio_format.to_lowercase();
         info!("根据参数选择音频格式: {}", selected_format);
 
-        // --- 精简：使用 extend 和 filter ---
+        // --- 使用 extend 和 filter ---
         final_items.extend(audio_items.into_iter().filter(|f| {
             f.filepath
                 .extension()
                 .and_then(|e| e.to_str())
-                .map_or(false, |ext| ext.to_lowercase() == selected_format)
+                .is_some_and(|ext| ext.to_lowercase() == selected_format)
         }));
 
         Ok(final_items)

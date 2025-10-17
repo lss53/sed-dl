@@ -42,7 +42,7 @@ impl M3u8Downloader {
         let token = self.context.token.lock().await;
         // 如果 token 不为空，就附加到 URL 上
         if !token.is_empty() {
-            url.query_pairs_mut().append_pair("accessToken", &*token);
+            url.query_pairs_mut().append_pair("accessToken", &token);
         }
         drop(token); // 尽早释放锁
 

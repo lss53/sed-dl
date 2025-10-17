@@ -198,7 +198,7 @@ impl TaskProcessor {
                 0
             };
 
-            let diff = (actual_size as i64 - expected_size as i64).abs() as u64;
+            let diff = (actual_size as i64 - expected_size as i64).unsigned_abs();
 
             debug!(
                 "大小校验详情 for '{:?}': 差异={}, 容差={}",
@@ -259,7 +259,7 @@ impl TaskProcessor {
             let token = self.context.token.lock().await;
             // 如果 token 不为空，就附加到 URL 上
             if !token.is_empty() {
-                url.query_pairs_mut().append_pair("accessToken", &*token);
+                url.query_pairs_mut().append_pair("accessToken", &token);
             }
 
             let mut request_builder = self.context.http_client.client.get(url.clone());

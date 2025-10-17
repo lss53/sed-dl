@@ -174,9 +174,8 @@ async fn main() {
                 eprintln!("   - {} {}", "请求地址:".bold(), url);
                 eprintln!("   - {} {}", "错误详情:".bold(), source);
                 eprintln!(
-                    "\n{} {}",
+                    "\n{} 这通常意味着目标网站的API接口已更新。请尝试更新本程序或联系开发者。",
                     *symbols::INFO,
-                    "这通常意味着目标网站的API接口已更新。请尝试更新本程序或联系开发者。"
                 );
                 std::process::exit(1);
             }
