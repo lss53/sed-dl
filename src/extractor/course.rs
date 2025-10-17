@@ -150,7 +150,7 @@ impl CourseExtractor {
         })
     }
 
-    fn get_teacher_map(&self, data: &CourseDetailsResponse) -> HashMap<usize, String> {
+    pub(super) fn get_teacher_map(&self, data: &CourseDetailsResponse) -> HashMap<usize, String> {
         let teacher_id_map: HashMap<_, _> = data
             .teacher_list
             .as_deref()
@@ -258,5 +258,113 @@ impl ResourceExtractor for CourseExtractor {
             .collect();
         info!("为课程 '{}' 提取到 {} 个文件", resource_id, results.len());
         Ok(results)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // --- 辅助函数：创建一个用于测试的 CourseExtractor 实例 ---
+    fn create_test_extractor() -> CourseExtractor {
+        let config = Arc::new(AppConfig::default());
+        CourseExtractor::new(
+            Arc::new(RobustClient::new(config.clone()).unwrap()),
+            config,
+            "dummy_template".to_string(),
+        )
+    }
+
+    // --- 测试用例 ---
+
+    #[test]
+    fn test_get_teacher_map_from_resource_structure() {
+        let extractor = create_test_extractor();
+        let data: CourseDetailsResponse = serde_json::from_value(json!({
+            "global_title": {"zh-CN": ""},
+            "custom_properties": {},
+            "relations": {
+                "course_resource": [
+                    { "id": "res1", "global_title": {"zh-CN": ""}, "resource_type_code": "", "update_time": "2024-01-01T12:00:00+08:00", "custom_properties": {} },
+                    { "id": "res2", "global_title": {"zh-CN": ""}, "resource_type_code": "", "update_time": "2024-01-01T12:00:00+08:00", "custom_properties": {} },
+                    { "id": "res3", "global_title": {"zh-CN": ""}, "resource_type_code": "", "update_time": "2024-01-01T12:00:00+08:00", "custom_properties": {} }
+                ]
+            },
+            "teacher_list": [
+                { "id": "t1", "name": "张老师" },
+                { "id": "t2", "name": "李老师" }
+            ],
+            "resource_structure": {
+                "relations": [
+                    {
+                        "title": "课时1",
+                        "res_ref": ["[0]"],
+                        "custom_properties": { "teacher_ids": ["t1"] }
+                    },
+                    {
+                        "title": "课时2",
+                        "res_ref": ["[1,2]"],
+                        "custom_properties": { "teacher_ids": ["t2"] }
+                    }
+                ]
+            }
+        }))
+        .unwrap();
+
+        let teacher_map = extractor.get_teacher_map(&data);
+
+        assert_eq!(teacher_map.len(), 3);
+        assert_eq!(teacher_map.get(&0), Some(&"张老师".to_string()));
+        assert_eq!(teacher_map.get(&1), Some(&"李老师".to_string()));
+        assert_eq!(teacher_map.get(&2), Some(&"李老师".to_string()));
+    }
+
+    #[test]
+    fn test_get_teacher_map_fallback_to_top_level_teachers() {
+        let extractor = create_test_extractor();
+        let data: CourseDetailsResponse = serde_json::from_value(json!({
+            "global_title": {"zh-CN": ""},
+            "relations": {
+                "course_resource": [
+                    { "id": "res1", "global_title": {"zh-CN": ""}, "resource_type_code": "", "update_time": "2024-01-01T12:00:00+08:00", "custom_properties": {} },
+                    { "id": "res2", "global_title": {"zh-CN": ""}, "resource_type_code": "", "update_time": "2024-01-01T12:00:00+08:00", "custom_properties": {} }
+                ]
+            },
+            "teacher_list": [
+                { "id": "t1", "name": "王老师" }
+            ],
+            // 没有 resource_structure
+            "custom_properties": {
+                "lesson_teacher_ids": ["t1"]
+            }
+        }))
+        .unwrap();
+
+        let teacher_map = extractor.get_teacher_map(&data);
+
+        assert_eq!(teacher_map.len(), 2);
+        assert_eq!(teacher_map.get(&0), Some(&"王老师".to_string()));
+        assert_eq!(teacher_map.get(&1), Some(&"王老师".to_string()));
+    }
+
+    #[test]
+    fn test_get_teacher_map_no_info() {
+        let extractor = create_test_extractor();
+        let data: CourseDetailsResponse = serde_json::from_value(json!({
+            "global_title": {"zh-CN": ""},
+            "custom_properties": {},
+            "relations": {
+                "course_resource": [
+                    { "id": "res1", "global_title": {"zh-CN": ""}, "resource_type_code": "", "update_time": "2024-01-01T12:00:00+08:00", "custom_properties": {} }
+                ]
+            },
+            "teacher_list": []
+        }))
+        .unwrap();
+
+        let teacher_map = extractor.get_teacher_map(&data);
+
+        assert!(teacher_map.is_empty());
     }
 }
