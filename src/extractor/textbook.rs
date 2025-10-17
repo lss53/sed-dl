@@ -256,3 +256,127 @@ impl ResourceExtractor for TextbookExtractor {
         Ok(pdf_files)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{cli::Cli, downloader::DownloadManager, DownloadJobContext};
+    use clap::Parser;
+    use std::sync::{atomic::AtomicBool, Arc};
+    use tokio::sync::Mutex as TokioMutex;
+
+    // --- 辅助函数：创建一个用于测试的上下文 ---
+    fn create_test_context(args_str: &str) -> DownloadJobContext {
+        let args = Arc::new(Cli::parse_from(args_str.split_whitespace()));
+        let config = Arc::new(crate::config::AppConfig::default());
+
+        DownloadJobContext {
+            manager: DownloadManager::new(),
+            token: Arc::new(TokioMutex::new("fake-token".to_string())),
+            config: config.clone(),
+            http_client: Arc::new(
+                crate::client::RobustClient::new(config.clone()).unwrap(),
+            ),
+            args,
+            non_interactive: true,
+            cancellation_token: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    // --- 辅助函数：创建一个用于测试的提取器实例 ---
+    fn create_test_extractor() -> TextbookExtractor {
+        let config = Arc::new(AppConfig::default());
+        TextbookExtractor::new(
+            Arc::new(RobustClient::new(config.clone()).unwrap()),
+            config,
+        )
+    }
+
+    #[test]
+    fn test_build_resource_path_full_tags() {
+        let extractor = create_test_extractor();
+        let context = create_test_context("sed-dl --id 123 --type tchMaterial");
+        let tags = vec![
+            Tag { tag_dimension_id: "zxxxd".to_string(), tag_name: "初中".to_string() },
+            Tag { tag_dimension_id: "zxxnj".to_string(), tag_name: "七年级".to_string() },
+            Tag { tag_dimension_id: "zxxxk".to_string(), tag_name: "数学".to_string() },
+            Tag { tag_dimension_id: "zxxbb".to_string(), tag_name: "人教版".to_string() },
+            Tag { tag_dimension_id: "zxxcc".to_string(), tag_name: "上册".to_string() },
+            Tag { tag_dimension_id: "other".to_string(), tag_name: "ignored".to_string() },
+        ];
+
+        let path = extractor.build_resource_path(Some(&tags), &context);
+
+        let expected_path: PathBuf = ["初中", "七年级", "数学", "人教版", "上册"].iter().collect();
+        assert_eq!(path, expected_path);
+    }
+
+    #[test]
+    fn test_build_resource_path_partial_tags() {
+        let extractor = create_test_extractor();
+        let context = create_test_context("sed-dl --id 123 --type tchMaterial");
+        let tags = vec![
+            Tag { tag_dimension_id: "zxxxd".to_string(), tag_name: "高中".to_string() },
+            // 年级缺失
+            Tag { tag_dimension_id: "zxxxk".to_string(), tag_name: "物理".to_string() },
+            // 版本是默认值，应该被忽略
+            Tag { tag_dimension_id: "zxxbb".to_string(), tag_name: "未知版本".to_string() },
+        ];
+
+        let path = extractor.build_resource_path(Some(&tags), &context);
+
+        let expected_path: PathBuf = ["高中", "物理"].iter().collect();
+        assert_eq!(path, expected_path);
+    }
+
+    #[test]
+    fn test_build_resource_path_no_relevant_tags() {
+        let extractor = create_test_extractor();
+        let context = create_test_context("sed-dl --id 123 --type tchMaterial");
+        let tags = vec![
+            Tag { tag_dimension_id: "other".to_string(), tag_name: "some_tag".to_string() },
+        ];
+
+        let path = extractor.build_resource_path(Some(&tags), &context);
+
+        assert_eq!(path, PathBuf::from(constants::UNCLASSIFIED_DIR));
+    }
+
+    #[test]
+    fn test_build_resource_path_empty_tag_list() {
+        let extractor = create_test_extractor();
+        let context = create_test_context("sed-dl --id 123 --type tchMaterial");
+        let tags: Vec<Tag> = vec![];
+
+        let path = extractor.build_resource_path(Some(&tags), &context);
+
+        assert_eq!(path, PathBuf::from(constants::UNCLASSIFIED_DIR));
+    }
+    
+    #[test]
+    fn test_build_resource_path_none_tag_list() {
+        let extractor = create_test_extractor();
+        let context = create_test_context("sed-dl --id 123 --type tchMaterial");
+
+        let path = extractor.build_resource_path(None, &context);
+
+        assert_eq!(path, PathBuf::from(constants::UNCLASSIFIED_DIR));
+    }
+
+    #[test]
+    fn test_build_resource_path_with_flat_arg() {
+        let extractor = create_test_extractor();
+        // 关键：在命令行参数中加入 --flat
+        let context = create_test_context("sed-dl --id 123 --type tchMaterial --flat");
+        let tags = vec![
+            Tag { tag_dimension_id: "zxxxd".to_string(), tag_name: "初中".to_string() },
+            Tag { tag_dimension_id: "zxxnj".to_string(), tag_name: "七年级".to_string() },
+        ];
+
+        let path = extractor.build_resource_path(Some(&tags), &context);
+
+        // 即使有 tag，--flat 参数也应该使其返回空路径
+        assert!(path.as_os_str().is_empty());
+        assert_eq!(path, PathBuf::new());
+    }
+}
