@@ -125,14 +125,21 @@ impl DownloadManager {
             }
         }
         ui::print_sub_header("任务总结");
-        if stats.total > 0 && stats.success == stats.total - stats.skipped {
+        // 当没有失败任务时，我们才认为是“成功”的总结
+        if stats.total > 0 && stats.failed == 0 {
+            // 只有在真的有文件被跳过时，才显示“已跳过”的信息
+            let skipped_info = if stats.skipped > 0 {
+                format!(" ({} 个已跳过)", stats.skipped)
+            } else {
+                String::new() // 返回一个空字符串
+            };
             println!(
-                "{} 所有 {} 个任务均已成功 ({} 个已跳过)。",
+                "{} 共 {} 个任务已成功{}。",
                 *symbols::OK,
                 stats.total,
-                stats.skipped
+                skipped_info
             );
-        } else {
+        } else if stats.total > 0 { // 增加一个 else if，避免在 total=0 时也打印摘要
             let summary = format!(
                 "{} | {} | {}",
                 format!("成功: {}", stats.success).green(),
