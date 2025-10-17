@@ -83,7 +83,8 @@ pub fn extract_document_file(resource: &CourseResource) -> Option<FileInfo> {
         .as_deref()
         .unwrap_or_default()
         .iter()
-        .find(|i| i.ti_file_flag.as_deref() == Some("pdf"))
+        // .find(|i| i.ti_file_flag.as_deref() == Some("pdf"))
+        .find(|i| i.ti_format.eq_ignore_ascii_case("pdf"))
         .and_then(|pdf_item| {
             pdf_item
                 .ti_storages

@@ -5,7 +5,7 @@ mod auth;
 mod dispatcher;
 mod job;
 mod m3u8;
-mod negotiator;
+pub mod negotiator;
 mod task_processor;
 mod task_runner;
 

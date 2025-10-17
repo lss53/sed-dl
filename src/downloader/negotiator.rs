@@ -278,3 +278,162 @@ impl<'a> ItemNegotiator<'a> {
         Ok(final_items)
     }
 }
+
+// 测试模块
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{cli::Cli, downloader::DownloadManager, DownloadJobContext};
+    use clap::Parser;
+    use std::{
+        path::PathBuf,
+        sync::{atomic::AtomicBool, Arc},
+    };
+    use tokio::sync::Mutex as TokioMutex;
+
+    // --- 辅助函数：创建一个用于测试的上下文 ---
+    fn create_test_context(args_str: &'static str) -> DownloadJobContext {
+        let args = Arc::new(Cli::parse_from(args_str.split_whitespace()));
+        let config = Arc::new(crate::config::AppConfig::default());
+
+        DownloadJobContext {
+            manager: DownloadManager::new(),
+            token: Arc::new(TokioMutex::new("fake-token".to_string())),
+            config,
+            http_client: Arc::new(
+                crate::client::RobustClient::new(Arc::new(crate::config::AppConfig::default()))
+                    .unwrap(),
+            ),
+            args,
+            non_interactive: true,
+            cancellation_token: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    // --- 辅助函数：创建一些模拟的视频文件信息 ---
+    fn create_sample_videos() -> Vec<FileInfo> {
+        vec![
+            FileInfo {
+                filepath: PathBuf::from("video_a [1080].ts"),
+                url: "url_1080".to_string(),
+                category: ResourceCategory::Video,
+                ..Default::default()
+            },
+            FileInfo {
+                filepath: PathBuf::from("video_a [720].ts"),
+                url: "url_720".to_string(),
+                category: ResourceCategory::Video,
+                ..Default::default()
+            },
+            FileInfo {
+                filepath: PathBuf::from("video_a [480].ts"),
+                url: "url_480".to_string(),
+                category: ResourceCategory::Video,
+                ..Default::default()
+            },
+            // 另一个视频，测试分组
+            FileInfo {
+                filepath: PathBuf::from("video_b [720].ts"),
+                url: "url_b_720".to_string(),
+                category: ResourceCategory::Video,
+                ..Default::default()
+            },
+        ]
+    }
+
+    // --- 视频过滤测试 ---
+
+    #[test]
+    fn test_filter_videos_best() {
+        let context = create_test_context("sed-dl --url a --video-quality best");
+        let negotiator = ItemNegotiator::new(&context);
+        let videos = create_sample_videos();
+        let result = negotiator.filter_videos_non_interactive(videos).unwrap();
+
+        assert_eq!(result.len(), 2);
+        // 验证为 video_a 选择了 1080p
+        assert!(result.iter().any(|f| f.url == "url_1080"));
+        // 验证为 video_b 选择了 720p
+        assert!(result.iter().any(|f| f.url == "url_b_720"));
+    }
+
+    #[test]
+    fn test_filter_videos_worst() {
+        let context = create_test_context("sed-dl --url a --video-quality worst");
+        let negotiator = ItemNegotiator::new(&context);
+        let videos = create_sample_videos();
+        let result = negotiator.filter_videos_non_interactive(videos).unwrap();
+
+        assert_eq!(result.len(), 2);
+        // 验证为 video_a 选择了 480p
+        assert!(result.iter().any(|f| f.url == "url_480"));
+        // 验证为 video_b 选择了 720p
+        assert!(result.iter().any(|f| f.url == "url_b_720"));
+    }
+
+    #[test]
+    fn test_filter_videos_specific_quality() {
+        let context = create_test_context("sed-dl --url a --video-quality 720");
+        let negotiator = ItemNegotiator::new(&context);
+        let videos = create_sample_videos();
+        let result = negotiator.filter_videos_non_interactive(videos).unwrap();
+
+        assert_eq!(result.len(), 2);
+        // 验证两个视频都选择了 720p
+        assert!(result.iter().any(|f| f.url == "url_720"));
+        assert!(result.iter().any(|f| f.url == "url_b_720"));
+    }
+
+    #[test]
+    fn test_filter_videos_non_existent_quality() {
+        let context = create_test_context("sed-dl --url a --video-quality 9999");
+        let negotiator = ItemNegotiator::new(&context);
+        let videos = create_sample_videos();
+        let result = negotiator.filter_videos_non_interactive(videos).unwrap();
+
+        // 当指定的清晰度不存在时，不应该选择任何视频
+        assert!(result.is_empty());
+    }
+
+    // --- 辅助函数：创建一些模拟的音频文件信息 ---
+    fn create_sample_audios() -> Vec<FileInfo> {
+        vec![
+            FileInfo {
+                filepath: PathBuf::from("track1.mp3"),
+                category: ResourceCategory::Audio,
+                ..Default::default()
+            },
+            FileInfo {
+                filepath: PathBuf::from("track1.m4a"),
+                category: ResourceCategory::Audio,
+                ..Default::default()
+            },
+            FileInfo {
+                filepath: PathBuf::from("document.pdf"), // 非音频文件
+                ..Default::default()
+            },
+        ]
+    }
+
+    // --- 音频过滤测试 ---
+
+    #[test]
+    fn test_filter_audio_non_interactive() {
+        let context = create_test_context("sed-dl --url a --audio-format mp3");
+        let negotiator = ItemNegotiator::new(&context);
+        let items = create_sample_audios();
+        let result = negotiator.filter_audio_non_interactive(items).unwrap();
+
+        // 应该只剩下 mp3 和 pdf (因为 pdf 不是音频，不会被过滤)
+        assert_eq!(result.len(), 2);
+        assert!(result
+            .iter()
+            .any(|f| f.filepath.to_string_lossy() == "track1.mp3"));
+        assert!(!result
+            .iter()
+            .any(|f| f.filepath.to_string_lossy() == "track1.m4a"));
+        assert!(result
+            .iter()
+            .any(|f| f.filepath.to_string_lossy() == "document.pdf"));
+    }
+}

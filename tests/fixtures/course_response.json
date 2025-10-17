@@ -7,8 +7,9 @@
   ],
   "teacher_list": [{ "id": "teacher123", "name": "张老师" }],
   "relations": {
-    "resources": [
+    "course_resource": [
       {
+        "id": "fake-resource-id-1",
         "global_title": { "zh-CN": "第一节课视频" },
         "custom_properties": { "alias_name": "课堂录像" },
         "update_time": "2024-01-01T12:00:00+08:00",
@@ -34,6 +35,7 @@
         ]
       },
       {
+        "id": "fake-resource-id-2",
         "global_title": { "zh-CN": "相关文档" },
         "custom_properties": { "alias_name": "教学课件" },
         "update_time": "2024-01-02T12:00:00+08:00",
@@ -41,6 +43,7 @@
         "ti_items": [
           {
             "ti_format": "pdf",
+            "ti_file_flag": "pdf",
             "ti_storages": ["http://example.com/document.pdf"],
             "ti_md5": "d41d8cd98f00b204e9800998ecf8427e",
             "ti_size": 102400

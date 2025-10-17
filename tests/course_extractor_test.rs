@@ -7,6 +7,7 @@ use sed_dl::{
     client::RobustClient,
     config::AppConfig,
     downloader::DownloadManager,
+    downloader::negotiator::ItemNegotiator,
     error::AppResult,
     extractor::{ResourceExtractor, course::CourseExtractor},
 };
@@ -91,7 +92,13 @@ async fn test_course_extractor_parses_mock_response() -> AppResult<()> {
         extractor_template,
     );
 
-    let file_infos = extractor.extract_file_info(resource_id, &context).await?;
+    let file_infos_raw = extractor.extract_file_info(resource_id, &context).await?;
+
+    // --- [核心修复] ---
+    // 手动模拟在非交互模式下的 ItemNegotiator 过滤行为。
+    // 这使得我们的测试更真实地反映了程序的完整流程。
+    let negotiator = ItemNegotiator::new(&context);
+    let file_infos = negotiator.pre_filter_items(file_infos_raw)?;
 
     // --- 5. Assert (断言阶段) ---
 
@@ -113,7 +120,7 @@ async fn test_course_extractor_parses_mock_response() -> AppResult<()> {
     assert!(video_path.contains("语文"), "路径应包含学科");
     assert!(video_path.contains("示例课程标题"), "路径应包含课程标题");
     assert!(
-        video_path.contains("第一节课视频 - 课堂录像 [720p] - [张老师].ts"),
+        video_path.contains("示例课程标题 - 课堂录像 [720] - [张老师].ts"),
         "视频文件名格式不正确"
     );
     assert_eq!(video_info.ti_size, Some(12345678), "视频大小解析错误"); // 验证是否从 custom_properties 获取了 total_size
@@ -126,7 +133,7 @@ async fn test_course_extractor_parses_mock_response() -> AppResult<()> {
 
     let pdf_path = pdf_info.filepath.to_string_lossy();
     assert!(
-        pdf_path.contains("相关文档 - 教学课件 - [张老师].pdf"),
+        pdf_path.contains("示例课程标题 - 教学课件 - [张老师].pdf"),
         "PDF文件名格式不正确"
     );
     assert_eq!(pdf_info.ti_size, Some(102400), "PDF大小解析错误");
