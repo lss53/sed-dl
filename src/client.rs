@@ -54,7 +54,7 @@ impl RobustClient {
 
         match res.status() {
             s if s.is_success() => Ok(res),
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+            StatusCode::UNAUTHORIZED => {
                 warn!(
                     "向 {} 的 HTTP 请求返回状态码: {}。这表明 Token 无效。",
                     res.url(),

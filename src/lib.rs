@@ -13,12 +13,13 @@ pub mod ui;
 pub mod utils;
 
 use crate::{
-    cli::Cli,
+    cli::{Cli, ResourceType},
     client::RobustClient,
     config::AppConfig,
     downloader::{DownloadManager, ResourceDownloader},
     error::{AppError, AppResult},
 };
+use clap::ValueEnum;
 use anyhow::anyhow;
 use colored::*;
 use log::{debug, info};
@@ -28,6 +29,8 @@ use std::{
 };
 use tokio::sync::Mutex as TokioMutex;
 use url::Url;
+use log::warn;
+use reqwest::StatusCode;
 
 /// 核心的执行上下文，包含所有任务所需的状态和工具
 #[derive(Clone)]
@@ -107,40 +110,85 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
 
 async fn handle_interactive_mode(base_context: DownloadJobContext) -> AppResult<()> {
     ui::print_header("交互模式");
-
-    let prompt_message: &str;
-    let help_message: &str;
-
-    if base_context.args.r#type.is_some() {
-        let type_name = match base_context.args.r#type.unwrap() {
-            crate::cli::ResourceType::TchMaterial => "教材 (tchMaterial)",
-            crate::cli::ResourceType::QualityCourse => "精品课 (qualityCourse)",
-            crate::cli::ResourceType::SyncClassroom => "同步课堂 (syncClassroom/classActivity)",
-        };
-        println!("你正处于针对 [{}] 类型的ID下载模式。", type_name.yellow());
-        help_message = "在此模式下，你可以逐一输入ID进行下载。";
-        prompt_message = "请输入资源ID";
-    } else {
-        help_message = "在此模式下，你可以逐一输入链接进行下载。";
-        prompt_message = "请输入资源链接";
-    }
-
+    let help_message = "在此模式下，你可以逐一输入 链接 或 ID 进行下载。";
+    let prompt_message = "请输入资源链接或 ID";
     println!("{}按 {} 可随时退出。", help_message, *symbols::CTRL_C);
 
     loop {
         match ui::prompt(prompt_message, None) {
             Ok(input) if !input.is_empty() => {
-                let context = base_context.clone();
-                // 忽略单个任务的错误，以便继续交互模式
-                if let Err(e) = process_single_task_cli(&input, context).await {
-                    log::error!("交互模式任务 '{}' 失败: {}", input, e);
-                    eprintln!("\n{} 处理任务时发生错误: {}", *symbols::ERROR, e);
+                let input_for_log = input.clone();
+
+                let result: AppResult<()> = if utils::is_resource_id(&input) {
+                    // --- ID 处理逻辑，带有智能重试循环 ---
+                    'type_selection_loop: loop {
+                        let context = base_context.clone();
+                        let resource_types = vec![
+                            "tchMaterial".to_string(),
+                            "qualityCourse".to_string(),
+                            "syncClassroom/classActivity".to_string(),
+                        ];
+                        let choice_str = ui::selection_menu(
+                            &resource_types,
+                            &format!("检测到ID '{}'，请选择其资源类型", input),
+                            "请输入数字选择类型 (直接按回车取消)",
+                            "1",
+                        );
+
+                        if choice_str.is_empty() {
+                            break 'type_selection_loop Ok(()); // 用户取消
+                        }
+
+                        let r#type = match choice_str.trim().parse::<usize>() {
+                            Ok(idx) if idx > 0 && idx <= resource_types.len() => {
+                                ResourceType::from_str(&resource_types[idx - 1], true).unwrap()
+                            }
+                            _ => {
+                                eprintln!("\n{} 无效的选择 '{}'。", *symbols::ERROR, choice_str);
+                                continue 'type_selection_loop; // 让用户重新选
+                            }
+                        };
+
+                        let mut new_context = context;
+                        let mut new_args = (*new_context.args).clone();
+                        new_args.r#type = Some(r#type);
+                        new_context.args = Arc::new(new_args);
+
+                        let download_result = ResourceDownloader::new(new_context).run_with_id(&input).await;
+
+                        match download_result {
+                            Ok(_) => {
+                                break 'type_selection_loop Ok(()); // 下载成功
+                            }
+                            Err(AppError::Network(ref req_err)) if req_err.status() == Some(StatusCode::FORBIDDEN) => {
+                                warn!("ID '{}' 配合类型 '{:?}' 访问失败 (403)，可能是类型选择错误。", input, r#type);
+                                println!("\n{} 访问失败，您选择的资源类型可能不正确。请重新选择。", *symbols::WARN);
+                                // 自动继续循环，让用户重新选择
+                            }
+                            Err(e) => {
+                                break 'type_selection_loop Err(e); // 其他错误，直接失败
+                            }
+                        }
+                    }
+                } else if Url::parse(&input).is_ok() {
+                    let context = base_context.clone();
+                    ResourceDownloader::new(context).run(&input).await.map(|_| ())
+                } else {
+                    Err(AppError::Other(anyhow!("输入 '{}' 既不是有效的链接，也不是有效的ID。", input)))
+                };
+
+                if let Err(e) = result {
+                    log::error!("交互模式任务 '{}' 失败: {}", input_for_log, e);
+                    if !matches!(e, AppError::UserInterrupt) {
+                        eprintln!("\n{} 处理任务时发生错误: {}", *symbols::ERROR, e.to_string().red());
+                    }
                 }
             }
-            Ok(_) => break,                                // 用户输入空行，退出
-            Err(_) => return Err(AppError::UserInterrupt), // Ctrl-C
+            Ok(_) => break, // 用户输入空行
+            Err(_) => return Err(AppError::UserInterrupt), // 用户按 Ctrl+C
         }
     }
+
     println!("\n{} 退出交互模式。", *symbols::INFO);
     Ok(())
 }
