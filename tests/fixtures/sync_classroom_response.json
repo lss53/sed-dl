@@ -1,0 +1,129 @@
+{
+  "global_title": { "zh-CN": "基因指导蛋白质的合成" },
+  "update_time": "2024-12-04T12:05:23.797+0800",
+  "custom_properties": {},
+  "relations": {
+    "national_course_resource": [
+      {
+        "id": "65aed1aa-5414-11eb-96b8-fa20200c3759",
+        "global_title": { "zh-CN": "基因指导蛋白质的合成（第一课时）" },
+        "custom_properties": { "alias_name": "视频课程" },
+        "resource_type_code": "assets_video",
+        "update_time": "2024-01-11T18:45:24.928+0800",
+        "ti_items": [
+          {
+            "ti_storages": ["https://.../720p.m3u8"],
+            "custom_properties": { "requirements": [{ "name": "Height", "value": "720" }, {"name": "total_size", "value": "26536341"}] },
+            "ti_format": "m3u8"
+          },
+          {
+            "ti_storages": ["https://.../360p.m3u8"],
+            "custom_properties": { "requirements": [{ "name": "Height", "value": "360" }] },
+            "ti_format": "m3u8"
+          },
+          {
+            "ti_storages": ["https://.../480p.m3u8"],
+            "custom_properties": { "requirements": [{ "name": "Height", "value": "480" }] },
+            "ti_format": "m3u8"
+          }
+        ]
+      },
+      {
+        "id": "c2d28ed2-1d85-38e4-55e4-d09a7abffd10",
+        "global_title": { "zh-CN": "基因指导蛋白质的合成（第一课时）" },
+        "custom_properties": { "alias_name": "课件" },
+        "resource_type_code": "coursewares",
+        "update_time": "2024-10-08T20:30:53.758+0800",
+        "ti_items": [{ "ti_storages": ["https://.../courseware1.pdf"], "ti_format": "pdf" }]
+      },
+      {
+        "id": "3c9c973a-5481-11eb-96b8-fa20200c3759",
+        "global_title": { "zh-CN": "基因指导蛋白质的合成（第一课时）" },
+        "custom_properties": { "alias_name": "学习任务单" },
+        "resource_type_code": "assets_document",
+        "update_time": "2023-10-27T18:01:17.209+0800",
+        "ti_items": [{ "ti_storages": ["https://.../task_sheet1.pdf"], "ti_format": "pdf" }]
+      },
+      {
+        "id": "3c9c9658-5481-11eb-96b8-fa20200c3759",
+        "global_title": { "zh-CN": "基因指导蛋白质的合成（第一课时）" },
+        "custom_properties": { "alias_name": "课后练习" },
+        "resource_type_code": "assets_document",
+        "update_time": "2023-10-27T18:01:17.277+0800",
+        "ti_items": [{ "ti_storages": ["https://.../exercise1.pdf"], "ti_format": "pdf" }]
+      },
+      {
+        "id": "65adc732-5414-11eb-96b8-fa20200c3759",
+        "global_title": { "zh-CN": "基因指导蛋白质的合成（第二课时）" },
+        "custom_properties": { "alias_name": "视频课程" },
+        "resource_type_code": "assets_video",
+        "update_time": "2024-01-11T18:45:25.158+0800",
+        "ti_items": [
+          {
+            "ti_storages": ["https://.../l2_720p.m3u8"],
+            "custom_properties": { "requirements": [{ "name": "Height", "value": "720" }] },
+            "ti_format": "m3u8"
+          },
+          {
+            "ti_storages": ["https://.../l2_360p.m3u8"],
+            "custom_properties": { "requirements": [{ "name": "Height", "value": "360" }] },
+            "ti_format": "m3u8"
+          },
+          {
+            "ti_storages": ["https://.../l2_480p.m3u8"],
+            "custom_properties": { "requirements": [{ "name": "Height", "value": "480" }] },
+            "ti_format": "m3u8"
+          }
+        ]
+      },
+      {
+        "id": "6410548a-bd66-2b05-02f1-7d6783223189",
+        "global_title": { "zh-CN": "基因指导蛋白质的合成（第二课时）" },
+        "custom_properties": { "alias_name": "课件" },
+        "resource_type_code": "coursewares",
+        "update_time": "2024-10-08T20:30:54.235+0800",
+        "ti_items": [{ "ti_storages": ["https://.../courseware2.pdf"], "ti_format": "pdf" }]
+      },
+      {
+        "id": "3c9aadd4-5481-11eb-96b8-fa20200c3759",
+        "global_title": { "zh-CN": "基因指导蛋白质的合成（第二课时）" },
+        "custom_properties": { "alias_name": "学习任务单" },
+        "resource_type_code": "assets_document",
+        "update_time": "2023-10-27T18:01:17.419+0800",
+        "ti_items": [{ "ti_storages": ["https://.../task_sheet2.pdf"], "ti_format": "pdf" }]
+      },
+      {
+        "id": "3c9aacf0-5481-11eb-96b8-fa20200c3759",
+        "global_title": { "zh-CN": "基因指导蛋白质的合成（第二课时）" },
+        "custom_properties": { "alias_name": "课后练习" },
+        "resource_type_code": "assets_document",
+        "update_time": "2023-10-27T18:01:22.378+0800",
+        "ti_items": [{ "ti_storages": ["https://.../exercise2.pdf"], "ti_format": "pdf" }]
+      }
+    ]
+  },
+  "resource_structure": {
+    "relations": [
+      {
+        "title": "第一课时",
+        "res_ref": ["$.relations.national_course_resource[0,1,2,3]"],
+        "custom_properties": { "teacher_ids": ["a8b9179a-0582-4f35-98e6-6e6f3c822ed2"] }
+      },
+      {
+        "title": "第二课时",
+        "res_ref": ["$.relations.national_course_resource[4,5,6,7]"],
+        "custom_properties": { "teacher_ids": ["a431af59-0068-45c9-b517-3b45c7c55e59"] }
+      }
+    ]
+  },
+  "teacher_list": [
+    {
+      "id": "a8b9179a-0582-4f35-98e6-6e6f3c822ed2",
+      "name": "姚亭秀"
+    },
+    {
+      "id": "a431af59-0068-45c9-b517-3b45c7c55e59",
+      "name": "刘媛媛"
+    }
+  ]
+}
