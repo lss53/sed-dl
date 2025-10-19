@@ -5,7 +5,7 @@ use sed_dl::config::AppConfig;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_client_handles_429_rate_limiting_with_retry_after() {
     // --- 1. Arrange (准备阶段) ---
 
