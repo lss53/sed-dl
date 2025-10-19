@@ -32,6 +32,7 @@
     -   🚀 **并发下载**：支持多文件同时下载，充分利用网络带宽。
     -   🔄 **断点续传**：网络异常中断后，可自动恢复下载进度。
     -   ✅ **完整性校验**：通过 MD5 和文件大小校验，确保下载内容完整无误。
+    -   **⏱️ 智能重试**：当服务器请求过于频繁时，能自动根据服务器指示进行等待和重试，下载更稳定。
 -   **视频专项优化**：
     -   🎬 **M3U8 支持**：自动解析并合并加密视频流，输出为可在主流播放器中直接播放的完整 `.ts` 视频文件。
     -   📺 **多清晰度**：支持选择 1080p、720p 等不同画质。
@@ -39,6 +40,7 @@
     -   🌳 **自动归类**：按学科、年级、版本等自动生成清晰的文件目录。
     -   ✍️ **规范命名**：自动过滤非法字符，生成整洁可读的文件名。
     -   🎨 **友好界面**：彩色进度提示与状态反馈，操作过程一目了然。
+    -   **💡 智能识别**：交互模式下自动识别输入内容是 URL 还是资源 ID，无需手动切换。
 -   **多模式操作**：
     -   **交互模式**：适合逐条输入链接或 ID，操作简单直观。
     -   **批量模式**：支持从文件读取多个链接，一次性完成下载任务。
@@ -86,7 +88,7 @@ cargo build --release
 > ```javascript
 > copy(JSON.parse(JSON.parse(localStorage.getItem(Object.keys(localStorage).find(i => i.startsWith("ND_UC_AUTH")))).value).access_token)
 > ```
-> **5. Token 将自动复制到剪贴板**，粘贴到工具中即可。程序会优先使用命令行传入的 `--token` 参数，其次是环境变量，最后才是自动保存的 Token。首次使用后，程序会自动保存 Token，后续无需重复输入。
+> **5. Token 将自动复制到剪贴板**，粘贴到工具中即可。程序会优先使用命令行传入的 `--token` 参数，其次是环境变量，最后才是自动保存的 Token。首次使用后，程序提示是否保存 Token，如果保存了，后续无需重复输入。程序加载 Token 的优先级为：命令行 `--token` 参数 > `ACCESS_TOKEN` 环境变量 > 配置文件中的 Token。
 
 #### 手动获取（备选）：
 
@@ -96,7 +98,7 @@ cargo build --release
 
 #### 交互模式（推荐新手）
 
-使用 `-i` 参数启动交互模式，按提示输入链接或资源 ID。
+使用 `-i` 或 `--interactive` 参数启动交互模式，输入链接或资源 ID 后程序会自动识别并处理。
 
 ```bash
 sed-dl -i
@@ -105,14 +107,14 @@ sed-dl -i
 
 #### 下载单个资源
 
-使用 `--url` 参数直接指定链接，程序将自动识别资源类型并下载。
+现在支持通过 `--url` 指定链接，或通过 `--id` 直接指定资源 ID。
 
 ```bash
-# 下载同步课堂的视频与课件
+# 方式一：通过 URL 下载（程序会自动提取 ID）
 sed-dl --url "https://.../classActivity?activityId=******"
 
-# 下载电子教材及音频
-sed-dl --url "https://.../tchMaterial?contentId=******"
+# 方式二：直接通过 ID 下载（需配合 --type）
+sed-dl --id "a1b2c3d4-....-e5f6g7h8i9j0" --type "syncClassroom/classActivity"
 ```
 
 #### 批量下载
@@ -129,6 +131,7 @@ a1b2c3d4-....-....-....-e5f6g7h8i9j0
 使用 `-b` 或 `--batch-file` 指定文件路径。**若文件中包含资源 ID，必须使用 `--type` 指定类型。**
 
 ```bash
+# 假设 links.txt 中的 ID 都是同步课堂类型
 sed-dl -b links.txt --type "syncClassroom/classActivity" -o "D:\课程资料"
 ```
 可用 `--type` 选项包括：`tchMaterial`、`qualityCourse`、`syncClassroom/classActivity`。
