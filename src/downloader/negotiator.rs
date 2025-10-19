@@ -4,9 +4,8 @@ use crate::{
     DownloadJobContext,
     error::AppResult,
     models::{FileInfo, ResourceCategory},
-    symbols, ui,
+    ui,
 };
-use colored::Colorize;
 use itertools::Itertools;
 use log::{debug, info, warn};
 use regex::Regex;
@@ -137,7 +136,7 @@ impl<'a> ItemNegotiator<'a> {
                 selected_quality
             );
             warn!("{}", msg);
-            eprintln!("{} {} {}", *symbols::WARN, "警告:".yellow(), msg);
+            ui::warn(&msg);
             return Ok(final_items);
         }
 
@@ -171,7 +170,7 @@ impl<'a> ItemNegotiator<'a> {
         {
             let msg = format!("在视频列表中未找到您指定的清晰度 '{}'。", selected_quality);
             warn!("{}", msg);
-            eprintln!("{} {} {}", *symbols::INFO, "提示:".cyan(), msg);
+            ui::info(&msg);
         }
 
         final_items.extend(selected_videos);

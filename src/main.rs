@@ -8,7 +8,7 @@ use sed_dl::{
     cli::{Cli, LogLevel},
     constants,
     error::AppError,
-    run_from_cli, symbols,
+    run_from_cli, symbols, ui,
 };
 use std::{
     env,
@@ -36,25 +36,24 @@ fn init_logger(level: LogLevel) {
     let log_file_path = dirs::home_dir()
         .map(|home| home.join(constants::CONFIG_DIR_NAME).join(constants::LOG_FILE_NAME))
         .unwrap_or_else(|| {
-            eprintln!("警告: 无法获取用户主目录，日志将写入临时目录。");
+            ui::warn("无法获取用户主目录，日志将写入临时目录。");
             env::temp_dir()
                 .join(app_name)
                 .join(constants::LOG_FILE_NAME)
         });
 
-    if let Some(dir) = log_file_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(dir) {
-            eprintln!("警告: 无法创建日志目录 {:?}: {}", dir, e);
+    if let Some(dir) = log_file_path.parent()
+        && let Err(e) = std::fs::create_dir_all(dir) {
+            ui::warn(&format!("无法创建日志目录 {:?}: {}", dir, e));
         }
-    }
 
     let file_appender = match fern::log_file(&log_file_path) {
         Ok(file) => file,
         Err(e) => {
-            eprintln!(
-                "警告: 无法打开日志文件 {:?} : {}。将尝试使用备用日志文件。",
+            ui::warn(&format!(
+                "无法打开日志文件 {:?} : {}。将尝试使用备用日志文件。",
                 log_file_path, e
-            );
+            ));
             let fallback_path = std::env::temp_dir().join(format!(
                 "{}-{}",
                 app_name,
@@ -66,10 +65,10 @@ fn init_logger(level: LogLevel) {
                     fb_file
                 }
                 Err(e_fb) => {
-                    eprintln!(
-                        "错误: 无法创建备用日志文件 {:?}: {}。日志将不会被记录到文件。",
+                    ui::error(&format!(
+                        "无法创建备用日志文件 {:?}: {}。日志将不会被记录到文件。",
                         fallback_path, e_fb
-                    );
+                    ));
                     return;
                 }
             }
@@ -91,7 +90,7 @@ fn init_logger(level: LogLevel) {
         .chain(file_appender)
         .apply()
     {
-        eprintln!("警告: 日志系统初始化失败: {}", e);
+        ui::warn(&format!("日志系统初始化失败: {}", e));
     }
 }
 
@@ -106,16 +105,15 @@ fn setup_ctrl_c_handler() -> Arc<AtomicBool> {
         }
 
         if handler_token.load(Ordering::Relaxed) {
-            println!("\n第二次中断，强制退出...");
+            ui::plain("\n第二次中断，强制退出...");
             warn!("用户第二次按下 {}，强制退出。", *symbols::CTRL_C);
             std::process::exit(130);
         }
 
-        println!(
-            "\n{} 正在停止... 请等待当前任务完成。再按一次 {} 可强制退出。",
-            *symbols::WARN,
+        ui::warn(&format!(
+            "\n正在停止... 请等待当前任务完成。再按一次 {} 可强制退出。",
             *symbols::CTRL_C
-        );
+        ));
         warn!("用户通过 {} 请求中断程序。", *symbols::CTRL_C);
         handler_token.store(true, Ordering::Relaxed);
     });
@@ -153,7 +151,9 @@ async fn main() {
     info!("程序正常退出。");
 }
 
+
 /// 统一处理程序最终的错误，包括日志记录和向用户显示友好信息。
+// handle_final_error 函数中 eprintln! 保持原样，因为它是专门的错误格式化器。
 fn handle_final_error(e: AppError) {
     // 用户中断是预期行为，静默退出，并使用标准退出码 130
     if matches!(e, AppError::UserInterrupt) {

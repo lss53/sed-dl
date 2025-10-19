@@ -4,6 +4,7 @@ use crate::{
     config::ExternalConfig, // 只需要从父模块导入结构体定义
     constants,
     error::{AppError, AppResult},
+    ui,
 };
 use anyhow::{Context, anyhow};
 use log::{debug, info};
@@ -55,11 +56,7 @@ pub fn save_token(token: &str) -> AppResult<()> {
         .with_context(|| format!("保存Token到 '{}' 失败", config_path.display()))?;
 
     info!("用户已将 Token 保存至配置文件: {}", config_path.display());
-    println!(
-        "{} Token已成功保存至: {}",
-        *crate::symbols::INFO,
-        config_path.display()
-    );
+    ui::success(&format!("Token已成功保存至: {}", config_path.display()));
 
     Ok(())
 }

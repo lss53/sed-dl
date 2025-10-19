@@ -13,7 +13,7 @@ mod task_runner;
 pub use job::ResourceDownloader;
 
 // 3. 将 DownloadManager 的逻辑移到这里，因为它是一个核心的、共享的状态管理器
-use crate::{symbols, ui};
+use crate::ui;
 use colored::*;
 use log::info;
 use std::{
@@ -116,11 +116,13 @@ impl DownloadManager {
         if !skipped.is_empty() || !failed.is_empty() {
             ui::print_sub_header("下载详情报告");
             if !skipped.is_empty() {
-                println!("\n{} 跳过的文件 ({}个):", *symbols::INFO, stats.skipped);
+                ui::plain("");
+                ui::info(&format!("跳过的文件 ({}个):", stats.skipped));
                 print_grouped_report(&skipped, |s| s.cyan());
             }
             if !failed.is_empty() {
-                println!("\n{} 失败的文件 ({}个):", *symbols::ERROR, stats.failed);
+                ui::plain("");
+                ui::error(&format!("失败的文件 ({}个):", stats.failed));
                 print_grouped_report(&failed, |s| s.red());
             }
         }
@@ -133,12 +135,7 @@ impl DownloadManager {
             } else {
                 String::new() // 返回一个空字符串
             };
-            println!(
-                "{} 共 {} 个任务已成功{}。",
-                *symbols::OK,
-                stats.total,
-                skipped_info
-            );
+            ui::success(&format!("共 {} 个任务已成功{}。", stats.total, skipped_info));
         } else if stats.total > 0 { // 增加一个 else if，避免在 total=0 时也打印摘要
             let summary = format!(
                 "{} | {} | {}",
@@ -146,7 +143,7 @@ impl DownloadManager {
                 format!("失败: {}", stats.failed).red(),
                 format!("跳过: {}", stats.skipped).yellow()
             );
-            println!("{}", summary);
+            ui::plain(&summary);
         }
     }
 }
@@ -163,11 +160,11 @@ fn print_grouped_report(
     let mut sorted_reasons: Vec<_> = grouped.keys().collect();
     sorted_reasons.sort();
     for reason in sorted_reasons {
-        println!("  - {}", color_fn(format!("原因: {}", reason).into()));
+        ui::plain(&format!("  - {}", color_fn(format!("原因: {}", reason).into())));
         let mut filenames = grouped.get(reason).unwrap().clone();
         filenames.sort();
         for filename in filenames {
-            println!("    - {}", filename);
+            ui::plain(&format!("    - {}", filename));
         }
     }
 }

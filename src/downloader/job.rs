@@ -6,7 +6,7 @@ use crate::{
     constants,
     error::*,
     models::{FileInfo, MetadataExtractionResult, ResourceCategory},
-    symbols, ui, utils, DownloadJobContext,
+    ui, utils, DownloadJobContext,
 };
 use anyhow::anyhow;
 use log::{debug, error, info, warn};
@@ -27,10 +27,8 @@ impl ResourceDownloader {
     /// 核心公共流程：处理已获取的文件列表并下载
     pub async fn process_and_download_items(&self, items: Vec<FileInfo>) -> AppResult<bool> {
         if items.is_empty() {
-            println!(
-                "\n{} 未能提取到任何可下载的文件信息 (或所有文件均被过滤)。",
-                *symbols::INFO
-            );
+            ui::plain("");
+            ui::info("未能提取到任何可下载的文件信息 (或所有文件均被过滤)。");
             return Ok(true);
         }
 
@@ -38,11 +36,8 @@ impl ResourceDownloader {
         fs::create_dir_all(&base_output_dir)?;
         let absolute_path = dunce::canonicalize(&base_output_dir)?;
         info!("文件将保存到目录: \"{}\"", absolute_path.display());
-        println!(
-            "\n{} 文件将保存到目录: \"{}\"",
-            *symbols::INFO,
-            absolute_path.display()
-        );
+        ui::plain("");
+        ui::info(&format!("文件将保存到目录: \"{}\"", absolute_path.display()));
 
         let selected_indices = if self.context.non_interactive {
             self.parse_selection_from_args(&items)?
@@ -51,14 +46,16 @@ impl ResourceDownloader {
         };
 
         if selected_indices.is_empty() {
-            println!("\n{} 未选择任何文件，任务结束。", *symbols::INFO);
+            ui::plain("");
+            ui::info("未选择任何文件，任务结束。");
             return Ok(true);
         }
         let final_tasks: Vec<FileInfo> =
             selected_indices.into_iter().map(|i| items[i].clone()).collect();
 
         if final_tasks.is_empty() {
-            println!("\n{} 根据您的清晰度/格式选择，没有文件可供下载。",*symbols::INFO);
+            ui::plain("");
+            ui::info("根据您的清晰度/格式选择，没有文件可供下载。");
             return Ok(true);
         }
 
@@ -69,15 +66,18 @@ impl ResourceDownloader {
     /// 封装了从单个输入（URL/ID）抓取元数据的完整逻辑
     pub async fn fetch_metadata(&self, task_input: &str) -> AppResult<MetadataExtractionResult> {
         let context = &self.context;
+        // +++ 使用常量 +++
+        use constants::api::types::*;
 
         let (extractor, resource_id) = if utils::is_resource_id(task_input) {
             let resource_type_enum = context.args.r#type.as_ref().ok_or_else(|| {
                 AppError::UserInputError("使用ID时必须提供 --type".to_string())
             })?;
             let type_key = match resource_type_enum {
-                ResourceType::TchMaterial => "tchMaterial",
-                ResourceType::QualityCourse => "qualityCourse",
-                ResourceType::SyncClassroom => "syncClassroom/classActivity",
+                // +++ 使用常量 +++
+                ResourceType::TchMaterial => TCH_MATERIAL,
+                ResourceType::QualityCourse => QUALITY_COURSE,
+                ResourceType::SyncClassroom => SYNC_CLASSROOM,
             };
             let api_conf = context.config.api_endpoints.get(type_key).ok_or_else(|| {
                 AppError::Other(anyhow!("未找到类型 '{}' 的API配置", type_key))

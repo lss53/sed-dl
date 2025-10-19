@@ -44,10 +44,7 @@ impl ResourceDownloader {
                                 .validate_token_with_probe(&new_token, initial_tasks)
                                 .await
                             {
-                                eprintln!(
-                                    "\n{} 新输入的Token似乎仍然无效，请重试。",
-                                    *symbols::ERROR
-                                );
+                                ui::error("新输入的Token似乎仍然无效，请重试。");
                                 continue;
                             }
                             *self.context.token.lock().await = new_token.clone();
@@ -55,11 +52,11 @@ impl ResourceDownloader {
                                 && let Err(e) = config::token::save_token(&new_token)
                             {
                                 error!("尝试保存新Token时失败: {}", e);
-                                eprintln!("{} 保存新Token失败: {}", *symbols::WARN, e);
+                                ui::warn(&format!("保存新Token失败: {}", e));
                             }
                             break;
                         }
-                        _ => println!("{}", "Token 不能为空。".yellow()),
+                        _ => ui::warn("Token 不能为空。"),
                     }
                 }
                 Ok(choice) if choice == "2" => {
@@ -84,7 +81,8 @@ impl ResourceDownloader {
         }
         // 如果 initial_tasks 不为空，才执行检查逻辑
         if !initial_tasks.is_empty() {
-            println!("\n{} Token 已更新。正在检查剩余任务...", *symbols::INFO);
+            ui::plain("");
+            ui::info("Token 已更新。正在检查剩余任务...");
             let mut remaining_tasks = vec![];
             let mut remaining_filenames = vec![];
             for task in initial_tasks {
@@ -101,17 +99,13 @@ impl ResourceDownloader {
             }
             if remaining_tasks.is_empty() {
                 info!("所有任务均已完成，无需重试。");
-                println!("{} 所有任务均已完成，无需重试。", *symbols::OK);
+                ui::success("所有任务均已完成，无需重试。");
             }
             self.context
                 .manager
                 .reset_token_failures(&remaining_filenames);
             info!("准备重试剩余的 {} 个任务。", remaining_tasks.len());
-            println!(
-                "{} 准备重试剩余的 {} 个任务...",
-                *symbols::INFO,
-                remaining_tasks.len()
-            );
+            ui::info(&format!("准备重试剩余的 {} 个任务...", remaining_tasks.len()));
             return Ok(TokenRetryResult {
                 remaining_tasks: Some(remaining_tasks),
                 should_abort: false,

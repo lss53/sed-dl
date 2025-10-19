@@ -24,9 +24,33 @@ pub fn box_message(title: &str, content: &[&str], color_func: fn(ColoredString) 
     println!("└{}┘", "─".repeat(constants::UI_WIDTH - 2));
 }
 
+/// 打印一条普通信息，带 [i] 符号
+pub fn info(message: &str) {
+    println!("{} {}", *symbols::INFO, message);
+}
+
+/// 打印一条成功信息，带 [OK] 符号
+pub fn success(message: &str) {
+    println!("{} {}", *symbols::OK, message);
+}
+
+/// 打印一条警告信息，带 [!] 符号，内容为黄色
+pub fn warn(message: &str) {
+    println!("{} {}", *symbols::WARN, message.yellow());
+}
+
+/// 打印一条错误信息到 stderr，带 [X] 符号，内容为红色
+pub fn error(message: &str) {
+    eprintln!("{} {}", *symbols::ERROR, message.red());
+}
+
+/// 打印不带任何符号的普通文本
+pub fn plain(message: &str) {
+    println!("{}", message);
+}
+
 pub fn prompt(message: &str, default: Option<&str>) -> io::Result<String> {
-    let default_str = default.map_or("".to_string(), |d| format!(" (默认: {})", d));
-    print!("\n>>> {}{}: ", message, default_str);
+    print!("\n>>> {}{}: ", message, default.map_or("".to_string(), |d| format!(" (默认: {})", d)));
     io::stdout().flush()?;
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
@@ -56,7 +80,7 @@ pub fn confirm(question: &str, default_yes: bool) -> bool {
                 if choice.is_empty() {
                     return default_yes;
                 }
-                println!("{}", "无效输入，请输入 'y' 或 'n'。".red());
+                error("无效输入，请输入 'y' 或 'n'。");
             }
             Err(_) => return false,
         }

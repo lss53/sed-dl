@@ -15,7 +15,7 @@ use crate::{
         FileInfo,
         api::{CourseDetailsResponse, CourseResource},
     },
-    symbols, utils,
+    ui, utils,
 };
 use async_trait::async_trait;
 use log::{debug, info, trace, warn};
@@ -190,7 +190,7 @@ impl ResourceExtractor for CourseExtractor {
 
         if all_resources.is_empty() {
             info!("课程 '{}' 下未找到任何资源。", resource_id);
-            println!("{} 未在该课程下找到任何资源。", *symbols::WARN);
+            ui::warn("未在该课程下找到任何资源。");
             return Ok(vec![]);
         }
         debug!("找到 {} 个相关资源。", all_resources.len());

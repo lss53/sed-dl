@@ -10,9 +10,7 @@ use crate::{
         api::{CourseResource, SyncClassroomResponse},
         FileInfo,
     },
-    symbols,
-    utils,
-    DownloadJobContext,
+    ui, utils, DownloadJobContext,
 };
 use async_trait::async_trait;
 use log::{info};
@@ -147,7 +145,7 @@ impl ResourceExtractor for SyncClassroomExtractor {
             // 如果没有课时结构（异常情况），则将所有资源放在课程根目录下，并给出警告
             // 注意：在这种情况下，API直接在资源层级提供了 teacher_name 字段，
             // 这与在课时结构中通过 teacher_ids 查找的逻辑不同。
-            println!("{} 警告: 未找到课时结构，所有文件将放在课程根目录。", *symbols::WARN);
+            ui::warn("警告: 未找到课时结构，所有文件将放在课程根目录。");
             for resource in all_resources {
                 let resource_alias = resource.custom_properties.alias_name.as_deref().unwrap_or("未分类资源");
                 let teacher_name = resource.custom_properties.teacher_name.as_deref().unwrap_or("未知教师");
