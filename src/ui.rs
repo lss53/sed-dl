@@ -1,6 +1,6 @@
 // src/ui.rs
 
-use crate::{constants, symbols};
+use crate::{constants, error::AppResult, symbols};
 use colored::*;
 use std::io::{self, Write};
 
@@ -68,7 +68,7 @@ pub fn selection_menu(
     title: &str,
     instructions: &str,
     default_choice: &str,
-) -> String {
+) -> AppResult<String> {
     println!("\n┌{}┐", "─".repeat(constants::UI_WIDTH - 2));
     println!("  {}", title.cyan().bold());
     println!("├{}┤", "─".repeat(constants::UI_WIDTH - 2));
@@ -86,7 +86,7 @@ pub fn selection_menu(
     println!("  {} (按 {} 可取消)", instructions, *symbols::CTRL_C);
     println!("└{}┘", "─".repeat(constants::UI_WIDTH - 2));
 
-    prompt("请输入你的选择", Some(default_choice)).unwrap_or_default()
+    prompt("请输入你的选择", Some(default_choice)).map_err(|_| crate::error::AppError::UserInterrupt)
 }
 
 pub fn prompt_hidden(message: &str) -> io::Result<String> {
@@ -99,13 +99,21 @@ pub fn get_user_choices_from_menu(
     options: &[String],
     title: &str,
     default_choice: &str,
-) -> Vec<String> {
+) -> AppResult<Vec<String>> {
     if options.is_empty() {
-        return vec![];
+        return Ok(vec![]);
     }
-    let user_input = selection_menu(options, title, "支持格式: 1, 3, 2-4, all", default_choice);
-    crate::utils::parse_selection_indices(&user_input, options.len())
+    let user_input = selection_menu(
+        options,
+        title,
+        "支持格式: 1, 3, 2-4, all",
+        default_choice,
+    )?; // <--- 在这里使用 '?'
+    
+    let selected_items = crate::utils::parse_selection_indices(&user_input, options.len()) // 现在 user_input 是 String 类型
         .into_iter()
         .map(|i| options[i].clone())
-        .collect()
+        .collect();
+        
+    Ok(selected_items) // <--- 将最终结果包装在 Ok() 中
 }

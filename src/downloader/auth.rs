@@ -2,7 +2,6 @@
 
 use super::job::ResourceDownloader;
 use crate::{config, constants, error::*, models::*, symbols, ui};
-// --- 修正: 导入缺失的 trait ---
 use colored::Colorize;
 use log::{debug, error, info, warn};
 use reqwest::StatusCode;

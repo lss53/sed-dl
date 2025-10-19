@@ -1,7 +1,7 @@
 // src/cli.rs
 
 use crate::constants;
-use clap::{Parser, ValueEnum, command, crate_version};
+use clap::{command, crate_version, Parser, ValueEnum};
 use std::path::PathBuf;
 
 /// 定义日志输出级别
@@ -46,7 +46,7 @@ pub struct Cli {
     /// 启动交互式会话，逐一输入链接
     #[arg(short, long, action = clap::ArgAction::SetTrue, help_heading = "Mode",
         // 添加参数冲突规则
-        conflicts_with_all = &["select", "video_quality", "audio_format", "prompt_each"]
+        conflicts_with_all = &["select", "video_quality", "audio_format"]
     )]
     pub interactive: bool,
     /// 指定要下载的单个资源链接
@@ -80,7 +80,7 @@ pub struct Cli {
         help_heading = "Options"
     )]
     pub filter_ext: Option<Vec<String>>,
-    /// [ID模式] 指定资源类型
+    /// [ID/批量模式] 指定资源类型
     #[arg(long, value_enum, help_heading = "Options")] // 将类型改为 value_enum
     pub r#type: Option<ResourceType>, // 将类型从 String 改为 ResourceType
     /// 提供访问令牌 (Access Token)，优先级最高
@@ -95,9 +95,6 @@ pub struct Cli {
     /// [教材模式] 选择音频格式: 'mp3', 'm4a' 等
     #[arg(long, default_value_t = constants::DEFAULT_AUDIO_FORMAT.to_string(), help_heading = "Options")]
     pub audio_format: String,
-    /// [批量模式] 为文件列表中的每个任务提供手动选择的机会
-    #[arg(long, action = clap::ArgAction::SetTrue, help_heading = "Options")]
-    pub prompt_each: bool,
     /// 将所有文件下载到输出目录的根路径，不创建额外的子目录
     #[arg(long, action = clap::ArgAction::SetTrue, help_heading = "Options")]
     pub flat: bool,

@@ -1,28 +1,26 @@
 // src/extractor/sync_classroom.rs
 
-use super::{ResourceExtractor, utils as extractor_utils};
+use super::{common::DirectoryBuilder, ResourceExtractor, utils as extractor_utils};
 use crate::{
-    DownloadJobContext,
     client::RobustClient,
     config::AppConfig,
     constants,
     error::*,
     models::{
-        FileInfo,
         api::{CourseResource, SyncClassroomResponse},
+        FileInfo,
     },
+    symbols,
     utils,
+    DownloadJobContext,
 };
 use async_trait::async_trait;
-use log::info;
-use regex::Regex;
+use log::{info};
 use std::{
     collections::HashMap,
     path::Path,
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
-
-static RES_REF_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([\d,\*]+)\]").unwrap());
 
 pub struct SyncClassroomExtractor {
     http_client: Arc<RobustClient>,
@@ -32,7 +30,7 @@ pub struct SyncClassroomExtractor {
 impl SyncClassroomExtractor {
     pub fn new(
         http_client: Arc<RobustClient>,
-        _config: Arc<AppConfig>,
+        _config: Arc<AppConfig>, // _config 标记为未使用
         url_template: String,
     ) -> Self {
         Self {
@@ -41,49 +39,31 @@ impl SyncClassroomExtractor {
         }
     }
 
-    fn parse_res_ref_indices(&self, ref_str: &str, total_resources: usize) -> Option<Vec<usize>> {
-        RES_REF_RE.captures(ref_str).and_then(|caps| {
-            caps.get(1).map(|m| {
-                if m.as_str() == "*" {
-                    (0..total_resources).collect()
-                } else {
-                    m.as_str()
-                        .split(',')
-                        .filter_map(|s| s.trim().parse::<usize>().ok())
-                        .collect()
-                }
-            })
-        })
-    }
-
     fn process_resource(
         &self,
         resource: &CourseResource,
-        filename_prefix: &str,
-        base_path: &Path,
+        base_name_prefix: &str, // 接收课程标题[课时标题]作为前缀
+        lesson_path: &Path,    // 接收课时子目录
         teacher_name: &str,
     ) -> Vec<FileInfo> {
         let alias = utils::sanitize_filename(
-            resource
-                .custom_properties
-                .alias_name
-                .as_deref()
-                .unwrap_or(""),
+            resource.custom_properties.alias_name.as_deref().unwrap_or("资源"),
         );
-        // --- 使用传入的前缀生成文件名 ---
-        let sanitized_prefix = utils::sanitize_filename(filename_prefix);
-        let base_name = format!("{} - {}", sanitized_prefix, &alias);
+
+        // 新的文件名基础：课程标题[课时标题] - 资源别名
+        let base_name = format!("{} - {}", base_name_prefix, &alias);
 
         match resource.resource_type_code.as_str() {
             constants::api::resource_types::ASSETS_VIDEO => {
-                extractor_utils::extract_video_files(resource, &base_name, base_path, teacher_name)
+                // 将拼接好的 base_name 传递给下游
+                extractor_utils::extract_video_files(resource, &base_name, lesson_path, teacher_name)
             }
             constants::api::resource_types::ASSETS_DOCUMENT
             | constants::api::resource_types::COURSEWARES
             | constants::api::resource_types::LESSON_PLANDESIGN => {
                 if let Some(mut file_info) = extractor_utils::extract_document_file(resource) {
                     let filename = format!("{} - [{}].pdf", &base_name, teacher_name);
-                    file_info.filepath = base_path.join(filename);
+                    file_info.filepath = lesson_path.join(filename);
                     vec![file_info]
                 } else {
                     info!("在资源 '{}' 中未找到可下载的 PDF 版本，跳过。", &resource.global_title.zh_cn);
@@ -108,40 +88,33 @@ impl ResourceExtractor for SyncClassroomExtractor {
             .fetch_json(&self.url_template, &[("resource_id", resource_id)])
             .await?;
 
+        // 1. 调用 Trait 方法，构建课程的根目录 (e.g., .../学科/版本/章节/)
+        let base_dir = data.build_base_directory(context, self.http_client.clone(), context.config.clone()).await?;
+
         let teacher_map: HashMap<&str, &str> = data
             .teacher_list
             .iter()
             .map(|t| (t.id.as_str(), t.name.as_str()))
             .collect();
-
+        
         let all_resources = &data.relations.resources;
-
         let mut all_files = Vec::new();
 
-        if let Some(lessons) = data
-            .resource_structure
-            .as_ref()
-            .and_then(|rs| rs.relations.as_ref())
-        {
-            // --- 智能判断是否需要添加课时标题 ---
-            let use_lesson_title = lessons.len() > 1;
-            
+        // 获取课程主标题，用于拼接文件名
+        let course_main_title = utils::sanitize_filename(data.get_resource_title());
+
+        if let Some(lessons) = data.resource_structure.as_ref().and_then(|rs| rs.relations.as_ref()) {
+
             for lesson in lessons {
-                let lesson_path = if context.args.flat {
-                    Path::new("").to_path_buf()
-                } else {
-                    // 不再将课时标题作为目录，因为它将成为文件名的一部分
-                    Path::new("").to_path_buf()
-                };
+                let lesson_title = &lesson.title;
+                
+                // 2. 构建课时子目录
+                let lesson_path = base_dir.join(utils::sanitize_filename(lesson_title));
 
-                 // 根据课时总数，动态决定文件名前缀
-                 let filename_prefix = if use_lesson_title {
-                     format!("{}[{}]", &data.global_title.zh_cn, &lesson.title)
-                 } else {
-                     // 如果只有一个课时，使用整个课程的标题
-                     data.global_title.zh_cn.clone() // clone() to own the String
-                 };
+                // 3. 构建文件名前缀
+                let filename_prefix = format!("{}[{}]", &course_main_title, lesson_title);
 
+                // 4. 教师名获取逻辑
                 let teacher_name = lesson
                     .custom_properties
                     .teacher_ids
@@ -155,7 +128,7 @@ impl ResourceExtractor for SyncClassroomExtractor {
                     .as_deref()
                     .unwrap_or_default()
                     .iter()
-                    .filter_map(|r| self.parse_res_ref_indices(r, all_resources.len()))
+                    .filter_map(|r| extractor_utils::parse_res_ref_indices(r, all_resources.len()))
                     .flatten()
                     .collect();
 
@@ -163,20 +136,31 @@ impl ResourceExtractor for SyncClassroomExtractor {
                     if let Some(resource) = all_resources.get(index) {
                         all_files.extend(self.process_resource(
                             resource,
-                            &filename_prefix, // <-- 传递正确的文件名前缀
+                            &filename_prefix,
                             &lesson_path,
                             teacher_name,
                         ));
                     }
                 }
             }
+        } else {
+            // 如果没有课时结构（异常情况），则将所有资源放在课程根目录下，并给出警告
+            // 注意：在这种情况下，API直接在资源层级提供了 teacher_name 字段，
+            // 这与在课时结构中通过 teacher_ids 查找的逻辑不同。
+            println!("{} 警告: 未找到课时结构，所有文件将放在课程根目录。", *symbols::WARN);
+            for resource in all_resources {
+                let resource_alias = resource.custom_properties.alias_name.as_deref().unwrap_or("未分类资源");
+                let teacher_name = resource.custom_properties.teacher_name.as_deref().unwrap_or("未知教师");
+                all_files.extend(self.process_resource(
+                    resource,
+                    resource_alias,
+                    &base_dir,
+                    teacher_name,
+                ));
+            }
         }
 
-        info!(
-            "为同步课 '{}' 提取到 {} 个文件",
-            resource_id,
-            all_files.len()
-        );
+        info!("为同步课堂 '{}' 提取到 {} 个文件", resource_id, all_files.len());
         Ok(all_files)
     }
 }

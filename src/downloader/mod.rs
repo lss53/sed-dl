@@ -171,4 +171,3 @@ fn print_grouped_report(
         }
     }
 }
-    

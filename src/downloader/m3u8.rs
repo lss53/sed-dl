@@ -1,7 +1,7 @@
 // src/downloader/m3u8.rs
 
 use crate::models::DownloadStatus;
-use crate::{DownloadJobContext, client::RobustClient, error::*, models::FileInfo};
+use crate::{client::RobustClient, constants, error::*, models::FileInfo, DownloadJobContext};
 use aes::cipher::{BlockDecryptMut, KeyInit, KeyIvInit, block_padding::Pkcs7};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ecb;
@@ -11,6 +11,7 @@ use log::{debug, error, info, warn};
 use md5::{Digest, Md5};
 use serde_json::Value;
 use std::{
+    cmp::min,
     fs::{self, File},
     io::{self, BufWriter, Write},
     path::Path,
@@ -223,6 +224,10 @@ impl M3u8Downloader {
                 );
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
+            let segment_concurrency = min(
+                self.context.config.max_workers * constants::performance::M3U8_CONCURRENCY_MULTIPLIER,
+                constants::performance::M3U8_MAX_CONCURRENCY,
+            ); // 设置上限为30
             let stream = stream::iter(failed_indices.clone())
                 .map(|i| {
                     let url_res = base_url.join(&urls[i]);
@@ -251,7 +256,7 @@ impl M3u8Downloader {
                         }
                     })
                 })
-                .buffer_unordered(self.context.config.max_workers * 2);
+                .buffer_unordered(segment_concurrency); // <--- 使用新变量
             let results: Vec<_> = stream.collect().await;
             failed_indices = results
                 .into_iter()

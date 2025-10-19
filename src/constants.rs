@@ -13,6 +13,8 @@ pub const DEFAULT_AUDIO_FORMAT: &str = "mp3";
 pub const DEFAULT_VIDEO_QUALITY: &str = "best";
 pub const DEFAULT_SELECTION: &str = "all";
 pub const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
+pub const HIGH_SCHOOL_STAGE_NAME: &str = "高中";
+pub const FILTER_CHAIN_SEPARATOR: &str = " -> ";
 
 pub const HELP_TOKEN_GUIDE: &str = r#"
 1. 登录平台: 使用 Chrome / Edge / Firefox 浏览器登录。
@@ -36,6 +38,11 @@ copy(
 ----------------------------------------------
 5. 此时 Token 已自动复制到剪贴板，可以直接粘贴使用。"#;
 
+pub mod performance {
+    pub const M3U8_CONCURRENCY_MULTIPLIER: usize = 2;
+    pub const M3U8_MAX_CONCURRENCY: usize = 50; // 将上限调整为更合理的50
+}
+
 pub mod api {
     pub mod types {
         pub const TCH_MATERIAL: &str = "tchMaterial";
@@ -52,5 +59,9 @@ pub mod api {
         pub const ASSETS_DOCUMENT: &str = "assets_document";
         pub const COURSEWARES: &str = "coursewares";
         pub const LESSON_PLANDESIGN: &str = "lesson_plandesign";
+    }
+    pub mod video_metadata_keys {
+        pub const HEIGHT: &str = "Height";
+        pub const TOTAL_SIZE: &str = "total_size";
     }
 }

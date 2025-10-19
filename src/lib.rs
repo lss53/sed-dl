@@ -18,21 +18,21 @@ use crate::{
     config::AppConfig,
     downloader::{DownloadManager, ResourceDownloader},
     error::{AppError, AppResult},
+    models::{FileInfo, MetadataExtractionResult},
 };
-use clap::ValueEnum;
 use anyhow::anyhow;
 use colored::*;
-use log::{debug, info};
+use futures::{stream, StreamExt};
+use indicatif::{ProgressBar, ProgressStyle};
+use log::{debug, warn, info};
+use reqwest::StatusCode;
 use std::{
     path::Path,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{atomic::AtomicBool, Arc},
 };
 use tokio::sync::Mutex as TokioMutex;
 use url::Url;
-use log::warn;
-use reqwest::StatusCode;
 
-/// 核心的执行上下文，包含所有任务所需的状态和工具
 #[derive(Clone)]
 pub struct DownloadJobContext {
     pub manager: DownloadManager,
@@ -44,22 +44,15 @@ pub struct DownloadJobContext {
     pub cancellation_token: Arc<AtomicBool>,
 }
 
-/// 库的公共入口点，由 `main.rs` 调用
 pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -> AppResult<()> {
     debug!("CLI 参数: {:?}", args);
     if args.token_help {
         ui::box_message(
             "获取 Access Token 指南",
-            constants::HELP_TOKEN_GUIDE
-                .lines()
-                .collect::<Vec<_>>()
-                .as_slice(),
+            constants::HELP_TOKEN_GUIDE.lines().collect::<Vec<_>>().as_slice(),
             |s| s.cyan(),
         );
-        println!(
-            "\n{} 安全提醒: 请妥善保管你的 Token，不要分享给他人。",
-            *symbols::INFO
-        );
+        println!("\n{} 安全提醒: 请妥善保管你的 Token。", *symbols::INFO);
         return Ok(());
     }
 
@@ -72,14 +65,7 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
         println!("\n{} 已从 {} 加载 Access Token。", *symbols::INFO, source);
     } else {
         info!("未找到本地 Access Token");
-        println!(
-            "\n{}",
-            format!(
-                "{} 未找到本地 Access Token。",
-                *symbols::INFO
-            )
-            .yellow()
-        );
+        println!("\n{}", format!("{} 未找到本地 Access Token。", *symbols::INFO).yellow());
     }
     let token = Arc::new(TokioMutex::new(token_opt.unwrap_or_default()));
 
@@ -91,7 +77,7 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
         config: config.clone(),
         http_client,
         args: args.clone(),
-        non_interactive: !args.interactive && !args.prompt_each,
+        non_interactive: !args.interactive,
         cancellation_token,
     };
 
@@ -99,187 +85,305 @@ pub async fn run_from_cli(args: Arc<Cli>, cancellation_token: Arc<AtomicBool>) -
         handle_interactive_mode(context).await?;
     } else if let Some(batch_file) = &args.batch_file {
         process_batch_tasks(batch_file, context).await?;
-    } else if let Some(url) = &args.url {
-        ResourceDownloader::new(context).run(url).await?;
-    } else if let Some(id) = &args.id {
-        ResourceDownloader::new(context).run_with_id(id).await?;
+    } else {
+        let downloader = ResourceDownloader::new(context.clone());
+        let task_input = args.url.as_deref().or(args.id.as_deref()).unwrap();
+        // 获取元数据和计数
+        let metadata_result = downloader.fetch_metadata(task_input).await?;
+        let all_files = metadata_result.files;
+
+        // 调用[私有辅助函数]打印详细的过滤提示
+        print_single_task_filter_summary(
+            &context,
+            metadata_result.original_count,
+            metadata_result.after_ext_filter_count,
+            metadata_result.after_version_filter_count,
+        );
+        
+        // 继续执行下载
+        downloader.process_and_download_items(all_files).await?;
     };
 
     Ok(())
+}
+
+// 私有辅助函数，专门用于打印单任务的过滤总结
+fn print_single_task_filter_summary(
+    context: &DownloadJobContext,
+    original_count: usize,
+    ext_filtered_count: usize,
+    version_filtered_count: usize,
+) {
+    if original_count > ext_filtered_count {
+        if let Some(exts) = &context.args.filter_ext {
+            println!(
+                "{} 已应用扩展名过滤器 (保留: {}), 文件数量从 {} 个变为 {} 个。",
+                *symbols::INFO, exts.join(","), original_count, ext_filtered_count
+            );
+        }
+    }
+    if ext_filtered_count > version_filtered_count {
+        let mut filters_applied = Vec::new();
+        if context.args.video_quality != constants::DEFAULT_VIDEO_QUALITY {
+            filters_applied.push(format!("视频 '{}'", context.args.video_quality));
+        }
+        if context.args.audio_format != constants::DEFAULT_AUDIO_FORMAT {
+            filters_applied.push(format!("音频 '{}'", context.args.audio_format));
+        }
+        
+        if !filters_applied.is_empty() {
+            println!(
+                "{} 已应用版本选择 (选择: {}), 文件数量从 {} 个变为 {} 个。",
+                *symbols::INFO, filters_applied.join(", "), ext_filtered_count, version_filtered_count
+            );
+        }
+    }
 }
 
 async fn handle_interactive_mode(base_context: DownloadJobContext) -> AppResult<()> {
     ui::print_header("交互模式");
-    let help_message = "在此模式下，你可以逐一输入 链接 或 ID 进行下载。";
-    let prompt_message = "请输入资源链接或 ID";
-    println!("{}按 {} 可随时退出。", help_message, *symbols::CTRL_C);
+    println!("在此模式下，你可以逐一输入 链接 或 ID 进行下载。按 {} 可随时退出。", *symbols::CTRL_C);
 
     loop {
-        match ui::prompt(prompt_message, None) {
+        match ui::prompt("请输入资源链接或 ID", None) {
             Ok(input) if !input.is_empty() => {
-                let input_for_log = input.clone();
+                let downloader = ResourceDownloader::new(base_context.clone());
+                
+                let result = async {
+                    // 接收 fetch_metadata 返回的所有计数
+                    let metadata_result = if utils::is_resource_id(&input) {
+                        process_id_with_auto_detect(&input, base_context.clone()).await?
+                    } else if Url::parse(&input).is_ok() {
+                        downloader.fetch_metadata(&input).await?
+                    } else {
+                        return Err(AppError::UserInputError(format!("输入 '{}' 不是有效链接或ID。", input)));
+                    };
+                    
+                    let all_files = metadata_result.files;
 
-                let result: AppResult<()> = if utils::is_resource_id(&input) {
-                    // --- ID 处理逻辑，带有智能重试循环 ---
-                    'type_selection_loop: loop {
-                        let context = base_context.clone();
-                        let resource_types = vec![
-                            "tchMaterial".to_string(),
-                            "qualityCourse".to_string(),
-                            "syncClassroom/classActivity".to_string(),
-                        ];
-                        let choice_str = ui::selection_menu(
-                            &resource_types,
-                            &format!("检测到ID '{}'，请选择其资源类型", input),
-                            "请输入数字选择类型 (直接按回车取消)",
-                            "1",
-                        );
+                    // 调用[私有辅助函数]打印详细的过滤提示
+                    print_single_task_filter_summary(
+                        &base_context,
+                        metadata_result.original_count,
+                        metadata_result.after_ext_filter_count,
+                        metadata_result.after_version_filter_count,
+                    );
 
-                        if choice_str.is_empty() {
-                            break 'type_selection_loop Ok(()); // 用户取消
-                        }
-
-                        let r#type = match choice_str.trim().parse::<usize>() {
-                            Ok(idx) if idx > 0 && idx <= resource_types.len() => {
-                                ResourceType::from_str(&resource_types[idx - 1], true).unwrap()
-                            }
-                            _ => {
-                                eprintln!("\n{} 无效的选择 '{}'。", *symbols::ERROR, choice_str);
-                                continue 'type_selection_loop; // 让用户重新选
-                            }
-                        };
-
-                        let mut new_context = context;
-                        let mut new_args = (*new_context.args).clone();
-                        new_args.r#type = Some(r#type);
-                        new_context.args = Arc::new(new_args);
-
-                        let download_result = ResourceDownloader::new(new_context).run_with_id(&input).await;
-
-                        match download_result {
-                            Ok(_) => {
-                                break 'type_selection_loop Ok(()); // 下载成功
-                            }
-                            Err(AppError::Network(ref req_err)) if req_err.status() == Some(StatusCode::FORBIDDEN) => {
-                                warn!("ID '{}' 配合类型 '{:?}' 访问失败 (403)，可能是类型选择错误。", input, r#type);
-                                println!("\n{} 访问失败，您选择的资源类型可能不正确。请重新选择。", *symbols::WARN);
-                                // 自动继续循环，让用户重新选择
-                            }
-                            Err(e) => {
-                                break 'type_selection_loop Err(e); // 其他错误，直接失败
-                            }
-                        }
-                    }
-                } else if Url::parse(&input).is_ok() {
-                    let context = base_context.clone();
-                    ResourceDownloader::new(context).run(&input).await.map(|_| ())
-                } else {
-                    Err(AppError::Other(anyhow!("输入 '{}' 既不是有效的链接，也不是有效的ID。", input)))
-                };
+                    downloader.process_and_download_items(all_files).await.map(|_|())
+                }.await;
 
                 if let Err(e) = result {
-                    log::error!("交互模式任务 '{}' 失败: {}", input_for_log, e);
-                    if !matches!(e, AppError::UserInterrupt) {
-                        eprintln!("\n{} 处理任务时发生错误: {}", *symbols::ERROR, e.to_string().red());
-                    }
+                    log::error!("交互模式任务 '{}' 失败: {}", &input, e);
+                    if matches!(e, AppError::UserInterrupt) { continue; }
+                    let error_message = match e {
+                        // 将 403/404 错误视为一种特殊的用户输入错误
+                        AppError::Network(req_err) 
+                            if req_err.status().is_some_and(|s| s == StatusCode::FORBIDDEN || s == StatusCode::NOT_FOUND) => 
+                        {
+                            format!("{} {}", *symbols::WARN, "资源不存在，请检查输入的链接或ID是否正确。".yellow())
+                        },
+                        // 其他网络错误仍然是严重错误
+                        AppError::Network(req_err) => {
+                            let friendly_msg = match req_err.status() {
+                                Some(status) => format!("服务器返回了一个错误: {}", status),
+                                None => "网络连接错误。".to_string(),
+                            };
+                            format!("{} {}", *symbols::ERROR, friendly_msg.red())
+                        },
+                        // 用户输入错误（包括ID找不到类型）本身就是警告
+                        AppError::UserInputError(msg) => format!("{} {}", *symbols::WARN, msg.yellow()),
+                        // 其他所有错误都是严重错误
+                        _ => format!("{} 处理时发生错误: {}", *symbols::ERROR, e.to_string().red()),
+                    };
+                    eprintln!("\n{}", error_message);
                 }
             }
-            Ok(_) => break, // 用户输入空行
-            Err(_) => return Err(AppError::UserInterrupt), // 用户按 Ctrl+C
+            Ok(_) => break,
+            Err(_) => return Err(AppError::UserInterrupt),
         }
     }
-
     println!("\n{} 退出交互模式。", *symbols::INFO);
     Ok(())
 }
 
-async fn process_batch_tasks(batch_file: &Path, base_context: DownloadJobContext) -> AppResult<()> {
-    let content = std::fs::read_to_string(batch_file).map_err(|e| {
-        log::error!("读取批量文件 '{}' 失败: {}", batch_file.display(), e);
-        AppError::from(e)
-    })?;
 
-    let tasks: Vec<String> = content
-        .lines()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+async fn process_batch_tasks(batch_file: &Path, base_context: DownloadJobContext) -> AppResult<()> {
+    let content = std::fs::read_to_string(batch_file).map_err(AppError::from)?;
+    let tasks: Vec<String> = content.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
     if tasks.is_empty() {
-        log::warn!("批量文件 '{}' 为空或不含有效行。", batch_file.display());
-        println!(
-            "{} 批量文件 '{}' 为空。",
-            *symbols::WARN,
-            batch_file.display()
-        );
+        println!("{} 批量文件为空。", *symbols::WARN);
         return Ok(());
     }
 
-    let mut success = 0;
-    let mut failed = 0;
-    ui::print_header(&format!(
-        "开始批量处理任务 (按 {} 可随时退出)",
-        *symbols::CTRL_C
-    ));
-    for (i, task) in tasks.iter().enumerate() {
-        if base_context
-            .cancellation_token
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            return Err(AppError::UserInterrupt);
+    let downloader = ResourceDownloader::new(base_context.clone());
+
+    ui::print_header(&format!("阶段 1/2: 批量解析任务 (共 {} 个)", tasks.len()));
+
+    let mut global_filters = Vec::new();
+    if let Some(exts) = &base_context.args.filter_ext {
+        global_filters.push(format!("扩展名保留: {}", exts.join(",")));
+    }
+    if base_context.args.video_quality != constants::DEFAULT_VIDEO_QUALITY {
+        global_filters.push(format!("视频选择策略: '{}'", base_context.args.video_quality));
+    }
+    if base_context.args.audio_format != constants::DEFAULT_AUDIO_FORMAT {
+        global_filters.push(format!("音频选择策略: '{}'", base_context.args.audio_format));
+    }
+
+    if !global_filters.is_empty() {
+        println!("{} 将应用全局过滤器:", *symbols::INFO);
+        for filter in global_filters {
+            println!("    - {}", filter);
         }
-        ui::print_sub_header(&format!(
-            "批量任务 {}/{} - {}",
-            i + 1,
-            tasks.len(),
-            utils::truncate_text(task, 60)
-        ));
-        let context = base_context.clone();
-        match process_single_task_cli(task, context.clone()).await {
-            Ok(_) => success += 1,
+        println!();
+    }
+
+    let pbar = ProgressBar::new(tasks.len() as u64);
+    pbar.set_style(
+        ProgressStyle::with_template("{prefix:10.cyan}: [{elapsed_precise}] [{bar:40.green/white.dim}] {pos}/{len} ({eta})")
+            .unwrap()
+            .progress_chars("━╸ "),
+    );
+    pbar.set_prefix("解析任务");
+
+    let mut stream = stream::iter(tasks.clone())
+        .map(|task| {
+            let downloader = downloader.clone();
+            let pbar_clone = pbar.clone();
+            async move { (task.clone(), downloader.fetch_metadata(&task).await, pbar_clone) }
+        })
+        .buffer_unordered(base_context.config.max_workers);
+
+    let mut all_files_to_process: Vec<FileInfo> = Vec::new();
+    let mut metadata_failed = 0;
+
+    while let Some((task, result, pbar)) = stream.next().await {
+        match result {
+            Ok(metadata_result) => {
+                let files = metadata_result.files;
+                let original_count = metadata_result.original_count;
+                let ext_filtered_count = metadata_result.after_ext_filter_count;
+                let version_filtered_count = metadata_result.after_version_filter_count;
+                
+                let final_details_str: String;
+
+                // 检查是否发生了任何过滤
+                if original_count == files.len() {
+                    final_details_str = format!("找到 {} 个文件", files.len());
+                } else {
+                    let mut count_chain = vec![original_count];
+                    if original_count > ext_filtered_count {
+                        count_chain.push(ext_filtered_count);
+                    }
+                    if ext_filtered_count > version_filtered_count {
+                        count_chain.push(version_filtered_count);
+                    }
+                    
+                    final_details_str = format!(
+                        "过滤: {}", 
+                        count_chain.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" -> ")
+                    );
+                }
+                
+                if files.is_empty() {
+                    log::info!("任务 '{}' 未解析到任何文件。", task);
+                    pbar.println(format!("{} {} (未找到文件)", *symbols::INFO, utils::truncate_text(&task, 60)));
+                } else {
+                    pbar.println(format!(
+                        "{} {} {}", // 格式简化
+                        *symbols::OK,
+                        utils::truncate_text(&task, 60),
+                        final_details_str
+                    ));
+                    all_files_to_process.extend(files);
+                }
+            }
             Err(e) => {
-                failed += 1;
-                log::error!("批量任务 '{}' 失败: {}", task, e);
-                eprintln!("\n{} 处理任务时发生错误: {}", *symbols::ERROR, e);
+                metadata_failed += 1;
+                log::error!("解析任务 '{}' 失败: {}", task, e);
+                let error_message = match &e {
+                    // 为网络错误提供更简洁的输出
+                    AppError::Network(req_err) => {
+                        if let Some(status) = req_err.status() {
+                            format!("网络错误: {}", status)
+                        } else {
+                            "网络连接失败".to_string()
+                        }
+                    },
+                    // 对于其他错误，保持原样
+                    _ => e.to_string(),
+                };
+                pbar.println(format!("{} {} ({})", *symbols::ERROR, utils::truncate_text(&task, 60), error_message));
+            }
+        }
+        pbar.inc(1);
+    }
+    
+    pbar.finish_and_clear();
+
+    if all_files_to_process.is_empty() {
+        ui::print_header("任务报告");
+        println!("{} 未能从任何任务中解析到可下载的文件。", *symbols::INFO);
+        return if metadata_failed > 0 {
+            Err(AppError::Other(anyhow!("{} 个任务元数据解析失败。", metadata_failed)))
+        } else { Ok(()) };
+    }
+
+    let successful_tasks_count = tasks.len() - metadata_failed;
+    ui::print_header(&format!(
+        "阶段 2/2: 批量下载任务 (成功 {} 个任务，共 {} 个文件)",
+        successful_tasks_count,
+        all_files_to_process.len()
+    ));
+    let _success = downloader.process_and_download_items(all_files_to_process).await?;
+
+    if metadata_failed > 0 {
+        // 构建需要上色的字符串
+        let warning_message = format!(
+            "\n{} 额外信息: 在开始下载前，有 {} 个任务的元数据解析失败。",
+            *symbols::WARN, // 使用黄色的警告符号
+            metadata_failed
+        );
+        // 对整个字符串应用 .yellow() 方法
+        println!("{}", warning_message.yellow());
+    }
+
+    Ok(())
+}
+
+async fn process_id_with_auto_detect(
+    id: &str,
+    base_context: DownloadJobContext,
+) -> AppResult<MetadataExtractionResult> { 
+    let resource_types = [
+        ResourceType::TchMaterial,
+        ResourceType::QualityCourse,
+        ResourceType::SyncClassroom,
+    ];
+    println!("\n{} 检测到ID，正在自动探测资源类型...", *symbols::INFO);
+
+    for r#type in resource_types {
+        let mut context = base_context.clone();
+        let mut new_args = (*context.args).clone();
+        new_args.r#type = Some(r#type);
+        context.args = Arc::new(new_args);
+
+        let downloader = ResourceDownloader::new(context);
+        match downloader.fetch_metadata(id).await {
+            Ok(result) if !result.files.is_empty() => return Ok(result),
+            Ok(_) => debug!("ID '{}' 在类型 '{:?}' 下未找到文件。", id, r#type),
+            Err(e @ AppError::TokenInvalid) => return Err(e), // Token错误是致命的，立即返回
+            Err(e) => {
+                // 对于其他错误（网络超时、服务器500等），只记录警告并继续尝试下一种类型
+                warn!(
+                    "在类型 '{:?}' 下探测ID '{}' 时遇到可恢复错误: {}",
+                    r#type, id, e
+                );
             }
         }
     }
-
-    ui::print_header("批量任务报告");
-    println!(
-        "{} | {} | 总计: {}",
-        format!("成功任务: {}", success).green(),
-        format!("失败任务: {}", failed).red(),
-        tasks.len()
-    );
-    if failed > 0 {
-        Err(AppError::Other(anyhow!("{} 个批量任务执行失败。", failed)))
-    } else {
-        Ok(())
-    }
-}
-
-async fn process_single_task_cli(task_input: &str, context: DownloadJobContext) -> AppResult<()> {
-    let result: AppResult<bool> = if utils::is_resource_id(task_input) {
-        if context.args.r#type.is_none() {
-            let msg = format!(
-                "任务 '{}' 是一个ID，但未提供 --type 参数，跳过。",
-                task_input
-            );
-            log::error!("{}", msg);
-            eprintln!("{} {}", *symbols::ERROR, msg);
-            return Err(AppError::Other(anyhow!(msg)));
-        }
-        ResourceDownloader::new(context)
-            .run_with_id(task_input)
-            .await
-    } else if Url::parse(task_input).is_ok() {
-        ResourceDownloader::new(context).run(task_input).await
-    } else {
-        let msg = format!("跳过无效条目: {}", task_input);
-        log::warn!("{}", msg);
-        eprintln!("{} {}", *symbols::WARN, msg);
-        return Ok(()); // 无效条目不是一个错误，直接返回成功
-    };
-
-    result.map(drop) // 如果成功，丢弃bool值，返回()
+    Err(AppError::UserInputError(format!(
+        "无法为ID '{}' 找到匹配的资源类型。",
+        id
+    )))
 }

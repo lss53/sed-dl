@@ -73,7 +73,7 @@ async fn test_course_extractor_parses_mock_response() -> AppResult<()> {
         config: config.clone(), // 使用我们修改过的 config
         http_client: Arc::new(RobustClient::new(config.clone())?),
         args: args.clone(),
-        non_interactive: !args.interactive && !args.prompt_each,
+        non_interactive: !args.interactive,
         cancellation_token: Arc::new(AtomicBool::new(false)),
     };
 

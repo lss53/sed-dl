@@ -8,7 +8,6 @@ use crate::{
     utils,
 };
 use anyhow::anyhow;
-// --- 修正: 导入缺失的宏 ---
 use log::{debug, error, info};
 use url::Url;
 
@@ -29,70 +28,68 @@ impl ResourceDownloader {
                     let id = resource_id.1.to_string();
                     if utils::is_resource_id(&id) {
                         info!("从 URL 中成功提取到资源 ID: '{}' (类型: {})", id, path_key);
-                        return Ok((self.create_extractor(api_conf), id));
+                        return Ok((self.create_extractor(api_conf)?, id));
                     }
                 }
             }
         }
         error!("无法从 URL '{}' 中识别资源类型或提取ID。", url_str);
-        Err(AppError::Other(anyhow!(
-            "无法识别的URL格式或不支持的资源类型。"
-        )))
+        Err(AppError::UserInputError(
+            "无法识别的URL格式或不支持的资源类型。".to_string()
+        ))
     }
 
     /// 根据 API 配置创建具体的提取器实例。
     pub(super) fn create_extractor(
         &self,
         api_conf: &crate::config::ApiEndpointConfig,
-    ) -> Box<dyn ResourceExtractor> {
+    ) -> AppResult<Box<dyn ResourceExtractor>> {
         match api_conf.extractor {
             ResourceExtractorType::Textbook => {
                 debug!("创建 TextbookExtractor");
-                Box::new(textbook::TextbookExtractor::new(
+                Ok(Box::new(textbook::TextbookExtractor::new(
                     self.context.http_client.clone(),
                     self.context.config.clone(),
-                ))
+                )))
             }
             ResourceExtractorType::Course => {
-                let template_key = api_conf
-                    .url_template_keys
-                    .get("main")
-                    .expect("Course API config missing 'main' template key");
+                let template_key = &api_conf.main_template_key;
                 let url_template = self
                     .context
                     .config
                     .url_templates
                     .get(template_key)
-                    .expect("URL template not found for key")
+                    .ok_or_else(|| {
+                        AppError::Other(anyhow!("未找到键为 '{}' 的URL模板", template_key))
+                    })?
                     .clone();
                 debug!("创建 CourseExtractor, 使用 URL 模板: {}", url_template);
-                Box::new(course::CourseExtractor::new(
+                Ok(Box::new(course::CourseExtractor::new(
                     self.context.http_client.clone(),
                     self.context.config.clone(),
                     url_template,
-                ))
+                )))
             }
             ResourceExtractorType::SyncClassroom => {
-                let template_key = api_conf
-                    .url_template_keys
-                    .get("main")
-                    .expect("SyncClassroom API config missing 'main' template key");
+                let template_key = &api_conf.main_template_key;
                 let url_template = self
                     .context
                     .config
                     .url_templates
                     .get(template_key)
-                    .expect("URL template not found for key")
+                    .ok_or_else(|| {
+                        AppError::Other(anyhow!("未找到键为 '{}' 的URL模板", template_key))
+                    })?
                     .clone();
                 debug!(
                     "创建 SyncClassroomExtractor, 使用 URL 模板: {}",
                     url_template
                 );
-                Box::new(sync_classroom::SyncClassroomExtractor::new(
+                Ok(Box::new(sync_classroom::SyncClassroomExtractor::new(
                     self.context.http_client.clone(),
                     self.context.config.clone(),
                     url_template,
-                ))
+                )))
             }
         }
     }

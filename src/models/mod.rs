@@ -131,3 +131,16 @@ pub struct TokenRetryResult {
     pub remaining_tasks: Option<Vec<FileInfo>>,
     pub should_abort: bool,
 }
+
+/// 封装了元数据提取过程的结果，比元组更具可读性。
+#[derive(Debug, Clone)]
+pub struct MetadataExtractionResult {
+    /// 经过所有过滤和协商后最终可供选择的文件列表。
+    pub files: Vec<FileInfo>,
+    /// API返回的原始文件总数。
+    pub original_count: usize,
+    /// 经过扩展名过滤（--filter-ext）后剩余的文件数。
+    pub after_ext_filter_count: usize,
+    /// 经过版本选择（清晰度/格式）后剩余的文件数。
+    pub after_version_filter_count: usize,
+}

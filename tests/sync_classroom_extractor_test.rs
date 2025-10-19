@@ -75,7 +75,8 @@ async fn test_sync_classroom_extractor_parses_correctly() -> AppResult<()> {
 
     mock_endpoint.assert_async().await;
 
-    // (视频(3) + 课件(1) + 任务单(1) + 练习(1)) * 2个课时 = 12个文件
+    // fixture 里有4个资源 * 2个课时 = 8个资源。其中2个视频各有3个流。
+    // 所以总文件数 = (3视频流 + 1课件 + 1任务单 + 1练习) * 2课时 = 12 个文件
     assert_eq!(file_infos.len(), 12, "应该提取出所有 12 个资源（包括各分辨率视频）");
 
     // --- 验证第一课时的文件 ---
@@ -83,6 +84,7 @@ async fn test_sync_classroom_extractor_parses_correctly() -> AppResult<()> {
         .iter()
         .filter(|f| f.filepath.to_string_lossy().contains("第一课时"))
         .collect();
+    // 3个视频流 + 课件 + 任务单 + 练习 = 6个文件
     assert_eq!(lesson1_files.len(), 6, "第一课时应该有 6 个文件 (3视频 + 3文档)");
 
     // 随机抽查一个第一课时的文件，验证文件名和教师
@@ -90,9 +92,14 @@ async fn test_sync_classroom_extractor_parses_correctly() -> AppResult<()> {
         .iter()
         .find(|f| f.filepath.to_string_lossy().contains("学习任务单"))
         .expect("没有找到第一课时的学习任务单");
-    let path_str_1 = task_sheet_1.filepath.to_string_lossy();
-    assert!(path_str_1.starts_with("基因指导蛋白质的合成[第一课时] - 学习任务单"));
-    assert!(path_str_1.contains("[姚亭秀].pdf"));
+    
+    // 只获取文件名进行断言
+    let filename_1 = task_sheet_1.filepath.file_name()
+        .expect("文件路径没有文件名")
+        .to_str().unwrap();
+        
+    // 断言文件名，而不是整个路径
+    assert_eq!(filename_1, "基因指导蛋白质的合成[第一课时] - 学习任务单 - [姚亭秀].pdf");
 
     // --- 验证第二课时的文件 ---
     let lesson2_files: Vec<_> = file_infos
@@ -102,13 +109,18 @@ async fn test_sync_classroom_extractor_parses_correctly() -> AppResult<()> {
     assert_eq!(lesson2_files.len(), 6, "第二课时应该有 6 个文件 (3视频 + 3文档)");
 
     // 随机抽查一个第二课时的文件，验证文件名和教师
-    let video_2 = lesson2_files
+    let video_2_720p = lesson2_files
         .iter()
-        .find(|f| f.filepath.to_string_lossy().contains("视频课程"))
-        .expect("没有找到第二课时的视频课程");
-    let path_str_2 = video_2.filepath.to_string_lossy();
-    assert!(path_str_2.starts_with("基因指导蛋白质的合成[第二课时] - 视频课程"));
-    assert!(path_str_2.contains("[刘媛媛].ts")); // 假设我们只关心ts文件
+        .find(|f| f.filepath.to_string_lossy().contains("视频课程") && f.filepath.to_string_lossy().contains("[720]"))
+        .expect("没有找到第二课时的720p视频课程");
+    
+    // 只获取文件名进行断言
+    let filename_2 = video_2_720p.filepath.file_name()
+        .expect("文件路径没有文件名")
+        .to_str().unwrap();
+        
+    // 断言文件名，而不是整个路径
+    assert_eq!(filename_2, "基因指导蛋白质的合成[第二课时] - 视频课程 [720] - [刘媛媛].ts");
 
     Ok(())
 }

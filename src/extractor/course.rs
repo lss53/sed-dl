@@ -1,7 +1,8 @@
 // src/extractor/course.rs
 
 use super::{
-    ResourceExtractor, chapter_resolver::ChapterTreeResolver, textbook::TextbookExtractor,
+    ResourceExtractor,
+    common::DirectoryBuilder,
     utils as extractor_utils,
 };
 use crate::{
@@ -18,19 +19,15 @@ use crate::{
 };
 use async_trait::async_trait;
 use log::{debug, info, trace, warn};
-use regex::Regex;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
-
-static REF_INDEX_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([\d,\*]+)\]").unwrap());
 
 pub struct CourseExtractor {
     http_client: Arc<RobustClient>,
     config: Arc<AppConfig>,
-    chapter_resolver: ChapterTreeResolver,
     url_template: String,
 }
 
@@ -42,8 +39,7 @@ impl CourseExtractor {
     ) -> Self {
         Self {
             http_client: http_client.clone(),
-            config: config.clone(),
-            chapter_resolver: ChapterTreeResolver::new(http_client, config),
+            config,
             url_template,
         }
     }
@@ -52,48 +48,18 @@ impl CourseExtractor {
         &self,
         data: &CourseDetailsResponse,
         context: &DownloadJobContext,
-    ) -> PathBuf {
-        if context.args.flat {
-            return PathBuf::new();
-        }
-        let course_title = &data.global_title.zh_cn;
-        let textbook_path = TextbookExtractor::new(self.http_client.clone(), self.config.clone())
-            .build_resource_path(data.tag_list.as_deref(), context);
-        let mut full_chapter_path = PathBuf::new();
-        if let (Some(tm_info), Some(path_str)) = (
-            &data.custom_properties.teachingmaterial_info,
-            data.chapter_paths.as_ref().and_then(|p| p.first()),
-        ) 
-            && let Ok(path) = self
-                .chapter_resolver
-                .get_full_chapter_path(&tm_info.id, path_str)
-                .await
-            {
-                full_chapter_path = path;
-            }
-        
-        let course_title_sanitized = utils::sanitize_filename(course_title);
-        let parent_path = if full_chapter_path.file_name().and_then(|s| s.to_str())
-            == Some(&course_title_sanitized)
-        {
-            full_chapter_path
-                .parent()
-                .unwrap_or_else(|| Path::new(""))
-                .to_path_buf()
-        } else {
-            full_chapter_path
-        };
-        let final_path = textbook_path.join(parent_path).join(course_title_sanitized);
-        debug!("课程 '{}' 的基础目录解析为: {:?}", course_title, final_path);
-        final_path
+    ) -> AppResult<PathBuf> {
+        // 直接调用 data 上已实现的 trait 方法，干净利落
+        data.build_base_directory(context, self.http_client.clone(), self.config.clone())
+            .await
     }
 
     fn process_single_resource(
         &self,
         resource: &CourseResource,
         index: usize,
-        course_title: &str, // <--- 新增参数
-        base_dir: &Path,
+        course_title: &str,
+        base_dir: &Path, // 这是课程的根目录，例如 ".../课程标题/"
         teacher_map: &HashMap<usize, String>,
     ) -> Vec<FileInfo> {
         let type_name = utils::sanitize_filename(
@@ -135,21 +101,6 @@ impl CourseExtractor {
         }
     }
 
-    fn parse_res_ref_indices(&self, ref_str: &str, total_resources: usize) -> Option<Vec<usize>> {
-        REF_INDEX_RE.captures(ref_str).and_then(|caps| {
-            caps.get(1).map(|m| {
-                if m.as_str() == "*" {
-                    (0..total_resources).collect()
-                } else {
-                    m.as_str()
-                        .split(',')
-                        .filter_map(|s| s.parse::<usize>().ok())
-                        .collect()
-                }
-            })
-        })
-    }
-
     pub(super) fn get_teacher_map(&self, data: &CourseDetailsResponse) -> HashMap<usize, String> {
         let teacher_id_map: HashMap<_, _> = data
             .teacher_list
@@ -186,7 +137,7 @@ impl CourseExtractor {
                     let teacher_str = ids_to_names_str(teacher_ids);
                     let indices: Vec<usize> = refs
                         .iter()
-                        .filter_map(|r| self.parse_res_ref_indices(r, total_resources))
+                        .filter_map(|r| extractor_utils::parse_res_ref_indices(r, total_resources))
                         .flatten()
                         .collect();
                     for index in indices {
@@ -232,7 +183,7 @@ impl ResourceExtractor for CourseExtractor {
 
         let course_title = utils::sanitize_filename(&data.global_title.zh_cn);
 
-        let base_dir = self.get_base_directory(&data, context).await;
+        let base_dir = self.get_base_directory(&data, context).await?;
         let teacher_map = self.get_teacher_map(&data);
 
         let all_resources = &data.relations.resources;

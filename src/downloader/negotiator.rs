@@ -99,7 +99,7 @@ impl<'a> ItemNegotiator<'a> {
             &sorted_qualities,
             "检测到多种视频清晰度，请选择",
             default_choice,
-        );
+        )?;
         debug!("用户已做出选择: {:?}", user_choices);
 
         let mut selected_videos = Vec::new();
@@ -241,7 +241,7 @@ impl<'a> ItemNegotiator<'a> {
 
         
         let user_choices =
-            ui::get_user_choices_from_menu(&sorted_formats, "检测到多种音频格式，请选择", "1");
+            ui::get_user_choices_from_menu(&sorted_formats, "检测到多种音频格式，请选择", "1")?;
         let lower_choices: Vec<_> = user_choices.iter().map(|s| s.to_lowercase()).collect();
 
         for (_, group) in audio_groups {

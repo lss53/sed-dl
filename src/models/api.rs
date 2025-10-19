@@ -2,6 +2,8 @@
 
 use chrono::{DateTime, FixedOffset};
 use serde::Deserialize;
+use crate::extractor::common::DirectoryBuilder;
+use async_trait::async_trait;
 
 // --- 通用结构体 ---
 
@@ -61,7 +63,9 @@ pub struct CourseDetailsCustomProperties {
 #[derive(Deserialize, Debug, Clone)]
 pub struct CourseResourceCustomProperties {
     pub alias_name: Option<String>,
-    pub height: Option<String>, // 新增 height 字段
+    pub height: Option<String>,
+    #[serde(default)]
+    pub teacher_name: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -110,6 +114,28 @@ pub struct CourseDetailsResponse {
     pub teacher_list: Option<Vec<Teacher>>,
 }
 
+#[async_trait]
+impl DirectoryBuilder for CourseDetailsResponse {
+    fn get_resource_title(&self) -> &str {
+        &self.global_title.zh_cn
+    }
+
+    fn get_tags(&self) -> Option<&[Tag]> {
+        self.tag_list.as_deref()
+    }
+
+    fn get_chapter_info(&self) -> Option<(&str, &str)> {
+        if let (Some(tm_info), Some(path_str)) = (
+            &self.custom_properties.teachingmaterial_info,
+            self.chapter_paths.as_ref().and_then(|p| p.first()),
+        ) {
+            Some((&tm_info.id, path_str))
+        } else {
+            None
+        }
+    }
+}
+
 // --- 同步课 (syncClassroom) 专用模型 ---
 
 #[derive(Deserialize, Debug, Clone)]
@@ -128,6 +154,28 @@ pub struct SyncClassroomResponse {
     pub resource_structure: Option<ResourceStructure>,
     #[serde(default)]
     pub teacher_list: Vec<Teacher>,
+}
+
+#[async_trait]
+impl DirectoryBuilder for SyncClassroomResponse {
+    fn get_resource_title(&self) -> &str {
+        &self.global_title.zh_cn
+    }
+
+    fn get_tags(&self) -> Option<&[Tag]> {
+        self.tag_list.as_deref()
+    }
+
+    fn get_chapter_info(&self) -> Option<(&str, &str)> {
+        if let (Some(tm_info), Some(path_str)) = (
+            &self.custom_properties.teachingmaterial_info,
+            self.chapter_paths.as_ref().and_then(|p| p.first()),
+        ) {
+            Some((&tm_info.id, path_str))
+        } else {
+            None
+        }
+    }
 }
 
 // --- 教材 (Textbook) 专用模型 ---

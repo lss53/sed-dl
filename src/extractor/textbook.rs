@@ -15,26 +15,28 @@ use crate::{
 };
 use async_trait::async_trait;
 use itertools::Itertools;
+use anyhow::anyhow;
 use log::{debug, info};
 use percent_encoding;
 use regex::Regex;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     path::{Path, PathBuf},
     sync::{Arc, LazyLock},
 };
 use url::Url;
 
-static TEMPLATE_TAGS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+// LazyLock 静态变量
+static GENERIC_FILENAME_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
-        ("zxxxd", "未知学段"),
-        ("zxxnj", "未知年级"),
-        ("zxxxk", "未知学科"),
-        ("zxxbb", "未知版本"),
-        ("zxxcc", "未知册"),
+        r"^pdf\.pdf$",
+        r"^document\.pdf$",
+        r"^file\.pdf$",
+        r"^\d+\.pdf$",
+        r"^[a-f0-9]{32}\.pdf$",
     ]
     .iter()
-    .cloned()
+    .map(|p| Regex::new(p).unwrap()) // 在初始化时 unwrap 是安全的
     .collect()
 });
 
@@ -101,18 +103,10 @@ impl TextbookExtractor {
     }
 
     fn is_generic_filename(&self, filename: &str) -> bool {
-        let patterns = [
-            r"^pdf\.pdf$",
-            r"^document\.pdf$",
-            r"^file\.pdf$",
-            r"^\d+\.pdf$",
-            r"^[a-f0-9]{32}\.pdf$",
-        ];
-        patterns.iter().any(|p| {
-            Regex::new(p)
-                .unwrap()
-                .is_match(filename.to_lowercase().as_str())
-        })
+        let lower_filename = filename.to_lowercase();
+        GENERIC_FILENAME_PATTERNS
+            .iter()
+            .any(|re| re.is_match(&lower_filename))
     }
 
     async fn extract_audio_info(
@@ -125,7 +119,7 @@ impl TextbookExtractor {
             .config
             .url_templates
             .get("TEXTBOOK_AUDIO")
-            .expect("TEXTBOOK_AUDIO URL template not found");
+            .ok_or_else(|| AppError::Other(anyhow!("配置文件中缺少 TEXTBOOK_AUDIO URL 模板")))?;
         let audio_items: Vec<AudioRelationItem> = self
             .http_client
             .fetch_json(url_template, &[("resource_id", resource_id)])
@@ -199,21 +193,40 @@ impl TextbookExtractor {
         if context.args.flat {
             return PathBuf::new();
         }
-        let mut path_map = TEMPLATE_TAGS.clone();
+        
+        // 从 AppConfig 获取目录配置
+        let dir_config = &context.config.dir_config;
+        
+        let mut path_map = dir_config.textbook_path_defaults.clone();
         if let Some(tags) = tag_list_val {
             for tag in tags {
-                if path_map.contains_key(tag.tag_dimension_id.as_str()) {
-                    path_map.insert(&tag.tag_dimension_id, &tag.tag_name);
+                if path_map.contains_key(&tag.tag_dimension_id) {
+                    path_map.insert(tag.tag_dimension_id.clone(), tag.tag_name.clone());
                 }
             }
         }
-        let default_values: HashSet<&str> = TEMPLATE_TAGS.values().cloned().collect();
-        let components: Vec<String> = ["zxxxd", "zxxnj", "zxxxk", "zxxbb", "zxxcc"]
+        
+        let mut is_high_school = false;
+        if let Some(stage) = path_map.get("zxxxd") {
+            if stage.contains(constants::HIGH_SCHOOL_STAGE_NAME) {
+                is_high_school = true;
+            }
+        }
+
+        let default_values: HashSet<String> = dir_config.textbook_path_defaults.values().cloned().collect();
+        let components: Vec<String> = dir_config
+            .textbook_path_order
             .iter()
-            .filter_map(|&key| path_map.get(key))
-            .filter(|&&val| !default_values.contains(val))
-            .map(|&name| utils::sanitize_filename(name))
+            .filter_map(|key| {
+                if is_high_school && key == "zxxnj" {
+                    return None;
+                }
+                path_map.get(key)
+            })
+            .filter(|&val| !default_values.contains(val))
+            .map(|name| utils::sanitize_filename(name))
             .collect();
+        
         if components.is_empty() {
             debug!("无法从标签构建分类路径，使用默认未分类目录");
             PathBuf::from(constants::UNCLASSIFIED_DIR)
@@ -223,6 +236,7 @@ impl TextbookExtractor {
             path
         }
     }
+
 }
 
 #[async_trait]
@@ -233,11 +247,9 @@ impl ResourceExtractor for TextbookExtractor {
         context: &DownloadJobContext,
     ) -> AppResult<Vec<FileInfo>> {
         info!("开始提取教材资源, ID: {}", resource_id);
-        let url_template = self
-            .config
-            .url_templates
-            .get("TEXTBOOK_DETAILS")
-            .expect("TEXTBOOK_DETAILS URL template not found");
+       let url_template = self.config.url_templates.get("TEXTBOOK_DETAILS").ok_or_else(
+            || AppError::Other(anyhow!("配置文件中缺少 TEXTBOOK_DETAILS URL 模板")),
+        )?;
         let data: TextbookDetailsResponse = self
             .http_client
             .fetch_json(url_template, &[("resource_id", resource_id)])

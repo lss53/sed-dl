@@ -11,7 +11,13 @@ use std::{collections::HashMap, time::Duration};
 pub struct ApiEndpointConfigFromFile {
     pub id_param: String,
     pub extractor: ResourceExtractorType,
-    pub url_template_keys: HashMap<String, String>,
+    #[serde(default = "default_main_template_key")]
+    pub main_template_key: String, // 简化，只保留最重要的 main key
+}
+
+// --- 为上面的 serde default 添加辅助函数 ---
+fn default_main_template_key() -> String {
+    "main".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -30,6 +36,32 @@ pub struct ExternalConfig {
     pub network: NetworkConfig,
     pub url_templates: HashMap<String, String>,
     pub api_endpoints: HashMap<String, ApiEndpointConfigFromFile>,
+    #[serde(default)]
+    pub directory_structure: DirectoryStructureConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirectoryStructureConfig {
+    pub textbook_path_order: Vec<String>,
+    pub textbook_path_defaults: HashMap<String, String>,
+}
+
+// 为 DirectoryStructureConfig 实现 Default
+impl Default for DirectoryStructureConfig {
+    fn default() -> Self {
+        Self {
+            textbook_path_order: vec![
+                "zxxxd".into(), "zxxnj".into(), "zxxxk".into(), "zxxbb".into(), "zxxcc".into()
+            ],
+            textbook_path_defaults: HashMap::from([
+                ("zxxxd".into(), "未知学段".into()),
+                ("zxxnj".into(), "未知年级".into()),
+                ("zxxxk".into(), "未知学科".into()),
+                ("zxxbb".into(), "未知版本".into()),
+                ("zxxcc".into(), "未知册次".into()),
+            ]),
+        }
+    }
 }
 
 impl ExternalConfig {
@@ -48,10 +80,7 @@ impl ExternalConfig {
                 ApiEndpointConfigFromFile {
                     id_param: "contentId".into(),
                     extractor: ResourceExtractorType::Textbook,
-                    url_template_keys: HashMap::from([
-                        ("textbook".into(), "TEXTBOOK_DETAILS".into()),
-                        ("audio".into(), "TEXTBOOK_AUDIO".into()),
-                    ]),
+                    main_template_key: "TEXTBOOK_DETAILS".into(),
                 },
             ),
             (
@@ -59,7 +88,7 @@ impl ExternalConfig {
                 ApiEndpointConfigFromFile {
                     id_param: "courseId".into(),
                     extractor: ResourceExtractorType::Course,
-                    url_template_keys: HashMap::from([("main".into(), "COURSE_QUALITY".into())]),
+                    main_template_key: "COURSE_QUALITY".into(),
                 },
             ),
             (
@@ -67,7 +96,7 @@ impl ExternalConfig {
                 ApiEndpointConfigFromFile {
                     id_param: "activityId".into(),
                     extractor: ResourceExtractorType::SyncClassroom,
-                    url_template_keys: HashMap::from([("main".into(), "COURSE_SYNC".into())]),
+                    main_template_key: "COURSE_SYNC".into(),
                 },
             ),
         ]);
@@ -85,6 +114,7 @@ impl ExternalConfig {
             network: network_config,
             url_templates,
             api_endpoints,
+            directory_structure: DirectoryStructureConfig::default(),
         }
     }
 }
@@ -93,7 +123,7 @@ impl ExternalConfig {
 pub struct ApiEndpointConfig {
     pub id_param: String,
     pub extractor: ResourceExtractorType,
-    pub url_template_keys: HashMap<String, String>,
+    pub main_template_key: String,
 }
 
 // 为 ResourceExtractorType 添加 serde 属性，使其可以直接从 JSON 文件中反序列化
@@ -116,23 +146,7 @@ pub struct AppConfig {
     pub max_retries: u32,
     pub api_endpoints: HashMap<String, ApiEndpointConfig>,
     pub url_templates: HashMap<String, String>,
-}
-
-#[cfg(feature = "testing")]
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            max_workers: 5,
-            default_audio_format: "mp3".to_string(),
-            server_prefixes: vec!["s-file-1".to_string()],
-            user_agent: "test-agent/1.0".to_string(),
-            connect_timeout: Duration::from_secs(5),
-            timeout: Duration::from_secs(15),
-            max_retries: 3,
-            api_endpoints: HashMap::new(),
-            url_templates: HashMap::new(),
-        }
-    }
+    pub dir_config: DirectoryStructureConfig,
 }
 
 impl AppConfig {
@@ -148,7 +162,7 @@ impl AppConfig {
                     ApiEndpointConfig {
                         id_param: file_config.id_param,
                         extractor: file_config.extractor,
-                        url_template_keys: file_config.url_template_keys,
+                        main_template_key: file_config.main_template_key,
                     },
                 ))
             })
@@ -169,6 +183,25 @@ impl AppConfig {
             max_retries: external_config.network.max_retries.unwrap_or(3),
             api_endpoints,
             url_templates: external_config.url_templates,
+            dir_config: external_config.directory_structure,
         })
+    }
+}
+
+#[cfg(feature = "testing")]
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            max_workers: 5,
+            default_audio_format: "mp3".to_string(),
+            server_prefixes: vec!["s-file-1".to_string()],
+            user_agent: "test-agent/1.0".to_string(),
+            connect_timeout: Duration::from_secs(5),
+            timeout: Duration::from_secs(15),
+            max_retries: 3,
+            api_endpoints: HashMap::new(),
+            url_templates: HashMap::new(),
+            dir_config: DirectoryStructureConfig::default(),
+        }
     }
 }

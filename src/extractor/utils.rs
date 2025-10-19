@@ -1,9 +1,35 @@
 // src/extractor/utils.rs
 
-use crate::models::{FileInfo, ResourceCategory, api::CourseResource};
+use crate::{
+    constants,
+    models::{FileInfo, ResourceCategory, api::CourseResource},
+};
 use itertools::Itertools;
 use log::debug;
-use std::path::Path;
+use regex::Regex;
+use std::{
+    path::Path,
+    sync::LazyLock,
+};
+
+static RES_REF_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([\d,\s\*]+)\]$").unwrap());
+
+/// 通用函数：解析资源引用字符串，如 "[0]", "[1,2]", "[*]"
+pub fn parse_res_ref_indices(ref_str: &str, total_resources: usize) -> Option<Vec<usize>> {
+    RES_REF_RE.captures(ref_str).and_then(|caps| {
+        caps.get(1).map(|m| {
+            let content = m.as_str().trim();
+            if content == "*" {
+                (0..total_resources).collect()
+            } else {
+                content
+                    .split(',')
+                    .filter_map(|s| s.trim().parse::<usize>().ok())
+                    .collect()
+            }
+        })
+    })
+}
 
 /// 通用函数：从一个视频资源中提取所有可下载的 m3u8 流
 pub fn extract_video_files(
@@ -28,7 +54,9 @@ pub fn extract_video_files(
                         .custom_properties
                         .as_ref()
                         .and_then(|p| p.requirements.as_ref())
-                        .and_then(|reqs| reqs.iter().find(|r| r.name == "Height"))
+                        .and_then(|reqs| {
+                            reqs.iter().find(|r| r.name == constants::api::video_metadata_keys::HEIGHT)
+                        })
                         .map(|h| h.value.as_str())
                         .unwrap_or("未知"); // 找不到则默认为 "未知"，避免歧义
 
@@ -40,7 +68,9 @@ pub fn extract_video_files(
                         .custom_properties
                         .as_ref()
                         .and_then(|p| p.requirements.as_ref())
-                        .and_then(|reqs| reqs.iter().find(|r| r.name == "total_size"))
+                        .and_then(|reqs| {
+                            reqs.iter().find(|r| r.name == constants::api::video_metadata_keys::TOTAL_SIZE)
+                        })
                         .and_then(|s| s.value.parse::<u64>().ok());
 
                     debug!(

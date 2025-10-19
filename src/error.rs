@@ -38,6 +38,8 @@ pub enum AppError {
     Security(String),
     #[error("用户中断")]
     UserInterrupt,
+    #[error("{0}")] // 只打印内部信息，不加任何前缀
+    UserInputError(String),
     #[error("未知错误: {0}")]
     Other(#[from] anyhow::Error),
 }

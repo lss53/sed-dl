@@ -5,7 +5,7 @@ use crate::{DownloadJobContext, cli::Cli, error::*, models::*, utils};
 use futures::StreamExt;
 use indicatif::{HumanBytes, ProgressBar};
 use log::{debug, error, info, warn};
-use reqwest::{StatusCode, header};
+use reqwest::{header, StatusCode};
 use std::{
     fs::{self, File, OpenOptions},
     io::Write as IoWrite,
@@ -48,9 +48,8 @@ impl TaskProcessor {
                     filename: item
                         .filepath
                         .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string(),
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| item.filepath.to_string_lossy().to_string()),
                     status: DownloadStatus::Skipped,
                     message: Some(reason),
                 });
@@ -80,9 +79,8 @@ impl TaskProcessor {
                 filename: item
                     .filepath
                     .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .to_string(),
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| item.filepath.to_string_lossy().to_string()),
                 status: final_status,
                 message: None,
             })
@@ -98,9 +96,8 @@ impl TaskProcessor {
                     filename: item
                         .filepath
                         .file_name()
-                        .unwrap()
-                        .to_string_lossy()
-                        .to_string(),
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| item.filepath.to_string_lossy().to_string()),
                     status: DownloadStatus::from(&e),
                     message: Some(e.to_string()),
                 })
@@ -165,8 +162,10 @@ impl TaskProcessor {
         }
     }
 
-    /// 检查本地文件的有效性（大小、MD5等）。
-    /// 优化：只对 M3U8 视频应用大小容差。
+    /// 检查本地文件的有效性。
+    /// 策略：优先使用快速的大小校验。如果大小匹配，则认为文件有效，跳过慢速的MD5校验。
+    /// 只有在没有大小信息可用的情况下，才回退到MD5校验。
+    /// 这种策略在性能和数据完整性之间取得了最佳平衡。
     fn check_local_file_status(item: &FileInfo) -> AppResult<ValidationStatus> {
         if !item.filepath.exists() {
             return Ok(ValidationStatus::Invalid("文件不存在".to_string()));
@@ -174,6 +173,7 @@ impl TaskProcessor {
         let metadata = item.filepath.metadata()?;
         let actual_size = metadata.len();
 
+        // (对于 m3u8 视频的特殊大小容差逻辑)
         if item.category == ResourceCategory::Video {
             debug!(
                 "M3U8 校验: 文件='{:?}', 期望大小(来自JSON): {:?}, 实际大小(合并后): {}",
@@ -269,6 +269,7 @@ impl TaskProcessor {
             }
 
             let res = request_builder.send().await?;
+            let is_resumed_successfully = res.status() == StatusCode::PARTIAL_CONTENT;
             if res.status() == StatusCode::RANGE_NOT_SATISFIABLE {
                 warn!(
                     "续传点 {} 无效，将从头开始下载: {}",
@@ -303,7 +304,7 @@ impl TaskProcessor {
                     pbar.inc(chunk.len() as u64);
                 }
             }
-            return Ok(if current_resume_from > 0 {
+            return Ok(if current_resume_from > 0 && is_resumed_successfully {
                 DownloadStatus::Resumed
             } else {
                 DownloadStatus::Success
