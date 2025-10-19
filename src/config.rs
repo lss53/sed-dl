@@ -7,19 +7,6 @@ use crate::{cli::Cli, constants, error::AppResult};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, time::Duration};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ApiEndpointConfigFromFile {
-    pub id_param: String,
-    pub extractor: ResourceExtractorType,
-    #[serde(default = "default_main_template_key")]
-    pub main_template_key: String, // 简化，只保留最重要的 main key
-}
-
-// --- 为上面的 serde default 添加辅助函数 ---
-fn default_main_template_key() -> String {
-    "main".to_string()
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NetworkConfig {
     pub server_prefixes: Option<Vec<String>>,
@@ -35,7 +22,8 @@ pub struct ExternalConfig {
     #[serde(default)]
     pub network: NetworkConfig,
     pub url_templates: HashMap<String, String>,
-    pub api_endpoints: HashMap<String, ApiEndpointConfigFromFile>,
+    // 直接使用 ApiEndpointConfig
+    pub api_endpoints: HashMap<String, ApiEndpointConfig>,
     #[serde(default)]
     pub directory_structure: DirectoryStructureConfig,
 }
@@ -49,16 +37,18 @@ pub struct DirectoryStructureConfig {
 // 为 DirectoryStructureConfig 实现 Default
 impl Default for DirectoryStructureConfig {
     fn default() -> Self {
+        // 使用常量
+        use constants::api::dimensions::*;
         Self {
             textbook_path_order: vec![
-                "zxxxd".into(), "zxxnj".into(), "zxxxk".into(), "zxxbb".into(), "zxxcc".into()
+                STAGE.into(), GRADE.into(), SUBJECT.into(), VERSION.into(), VOLUME.into()
             ],
             textbook_path_defaults: HashMap::from([
-                ("zxxxd".into(), "未知学段".into()),
-                ("zxxnj".into(), "未知年级".into()),
-                ("zxxxk".into(), "未知学科".into()),
-                ("zxxbb".into(), "未知版本".into()),
-                ("zxxcc".into(), "未知册次".into()),
+                (STAGE.into(), "未知学段".into()),
+                (GRADE.into(), "未知年级".into()),
+                (SUBJECT.into(), "未知学科".into()),
+                (VERSION.into(), "未知版本".into()),
+                (VOLUME.into(), "未知册次".into()),
             ]),
         }
     }
@@ -74,26 +64,29 @@ impl ExternalConfig {
             ("CHAPTER_TREE".into(), "https://{prefix}.ykt.cbern.com.cn/zxx/ndrv2/national_lesson/trees/{tree_id}.json".into()),
         ]);
 
+        // 使用常量
+        use constants::api::types::*;
         let api_endpoints = HashMap::from([
             (
-                "tchMaterial".into(),
-                ApiEndpointConfigFromFile {
+                TCH_MATERIAL.into(),
+                // 直接构造 ApiEndpointConfig
+                ApiEndpointConfig {
                     id_param: "contentId".into(),
                     extractor: ResourceExtractorType::Textbook,
                     main_template_key: "TEXTBOOK_DETAILS".into(),
                 },
             ),
             (
-                "qualityCourse".into(),
-                ApiEndpointConfigFromFile {
+                QUALITY_COURSE.into(),
+                ApiEndpointConfig {
                     id_param: "courseId".into(),
                     extractor: ResourceExtractorType::Course,
                     main_template_key: "COURSE_QUALITY".into(),
                 },
             ),
             (
-                "syncClassroom/classActivity".into(),
-                ApiEndpointConfigFromFile {
+                SYNC_CLASSROOM.into(),
+                ApiEndpointConfig {
                     id_param: "activityId".into(),
                     extractor: ResourceExtractorType::SyncClassroom,
                     main_template_key: "COURSE_SYNC".into(),
@@ -119,11 +112,17 @@ impl ExternalConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiEndpointConfig {
     pub id_param: String,
     pub extractor: ResourceExtractorType,
+    #[serde(default = "default_main_template_key")] // serde 需要这个函数
     pub main_template_key: String,
+}
+
+// 辅助函数现在为 ApiEndpointConfig 服务
+fn default_main_template_key() -> String {
+    "main".to_string()
 }
 
 // 为 ResourceExtractorType 添加 serde 属性，使其可以直接从 JSON 文件中反序列化
@@ -152,21 +151,9 @@ pub struct AppConfig {
 impl AppConfig {
     pub fn new(args: &Cli) -> AppResult<Self> {
         let external_config = load_or_create_external_config()?;
-
-        let api_endpoints = external_config
-            .api_endpoints
-            .into_iter()
-            .map(|(key, file_config)| {
-                Ok((
-                    key,
-                    ApiEndpointConfig {
-                        id_param: file_config.id_param,
-                        extractor: file_config.extractor,
-                        main_template_key: file_config.main_template_key,
-                    },
-                ))
-            })
-            .collect::<AppResult<HashMap<_, _>>>()?;
+        
+        // 现在这里的逻辑是正确的，因为不再需要转换
+        let api_endpoints = external_config.api_endpoints;
 
         Ok(Self {
             max_workers: args.workers.unwrap_or(5),
@@ -181,7 +168,7 @@ impl AppConfig {
             ),
             timeout: Duration::from_secs(external_config.network.timeout_secs.unwrap_or(60)),
             max_retries: external_config.network.max_retries.unwrap_or(3),
-            api_endpoints,
+            api_endpoints, // 直接使用
             url_templates: external_config.url_templates,
             dir_config: external_config.directory_structure,
         })

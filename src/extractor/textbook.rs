@@ -194,6 +194,8 @@ impl TextbookExtractor {
             return PathBuf::new();
         }
         
+        // 使用常量
+        use constants::api::dimensions::*;
         // 从 AppConfig 获取目录配置
         let dir_config = &context.config.dir_config;
         
@@ -207,18 +209,19 @@ impl TextbookExtractor {
         }
         
         let mut is_high_school = false;
-        if let Some(stage) = path_map.get("zxxxd") {
-            if stage.contains(constants::HIGH_SCHOOL_STAGE_NAME) {
+        // 使用常量
+        if let Some(stage) = path_map.get(STAGE) 
+            && stage.contains(constants::HIGH_SCHOOL_STAGE_NAME) {
                 is_high_school = true;
             }
-        }
 
         let default_values: HashSet<String> = dir_config.textbook_path_defaults.values().cloned().collect();
         let components: Vec<String> = dir_config
             .textbook_path_order
             .iter()
             .filter_map(|key| {
-                if is_high_school && key == "zxxnj" {
+                // 使用常量
+                if is_high_school && key == GRADE {
                     return None;
                 }
                 path_map.get(key)

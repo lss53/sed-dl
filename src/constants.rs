@@ -49,6 +49,13 @@ pub mod api {
         pub const QUALITY_COURSE: &str = "qualityCourse";
         pub const SYNC_CLASSROOM: &str = "syncClassroom/classActivity";
     }
+    pub mod dimensions {
+        pub const STAGE: &str = "zxxxd";
+        pub const GRADE: &str = "zxxnj";
+        pub const SUBJECT: &str = "zxxxk";
+        pub const VERSION: &str = "zxxbb";
+        pub const VOLUME: &str = "zxxcc";
+    }
     pub mod resource_formats {
         pub const PDF: &str = "pdf";
         pub const M3U8: &str = "m3u8";
