@@ -5,41 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - 2025-10-17
+## [2.1.0] - 2025-10-19
+
+### 🚀 Changed
+
+- **Unified UI Output**: All command-line output (info, warnings, errors, success messages) has been standardized for a consistent and professional user experience. This also lays the groundwork for future features like a `--quiet` mode.
+- **Improved Performance**: Significantly improved stability and performance during high-concurrency downloads by fixing a critical issue that could cause the application to become unresponsive.
+- **Friendlier User Feedback**: User-facing messages are now more context-aware. For example, when a user-specified video quality is not found, the application now provides a neutral informational message instead of an alarming warning.
+
+### 🐛 Fixed
+
+- **Concurrency Stability**: Fixed a critical ownership bug that could cause the application to crash during batch mode (`-b`, `--batch-file`) after parsing all task inputs.
+- **Rate Limiting Resilience**: Corrected a performance issue where handling server rate-limiting (HTTP 429) could degrade the responsiveness of other concurrent tasks.
+
+### Refactor
+
+- **Centralized Constants**: Eliminated "magic strings" by replacing hardcoded API keys and path components with centralized constants, improving code robustness and maintainability.
+- **Simplified Configuration Model**: Reduced code duplication and simplified the internal configuration structure by merging redundant data models, making the application easier to extend in the future.
+
+## [2.0.0] - 2025-10-18
 
 ### ⚠️ BREAKING CHANGES ⚠️
 
+- **Configuration File**: The structure of `config.json` has been updated to include new sections for directory structure (`directory_structure`) and to simplify API endpoint definitions. Old configuration files are **not compatible** and will be automatically backed up and replaced with a new default on first run.
 - **Command-line Arguments**:
+  - The `--prompt-each` flag has been **removed**. Its functionality is now the default behavior in interactive mode.
   - Interactive mode (`-i`, `--interactive`) is now **mutually exclusive** with flags that imply non-interactive selection (`-q`, `--select`). Using them together will now result in an error.
-  - The video quality flag (`-q`, `--video-quality`) now **only accepts numeric values** (e.g., `720`). Suffixes like `p` are no longer supported to ensure parsing consistency.
-- **Output Filenames**:
-  - The filename format for videos has been standardized to `... [720].ts`, removing the trailing `p` from the quality indicator (e.g., `...[720p].ts` is now `...[720].ts`).
-  - The filename generation logic for `syncClassroom` resources has been corrected to use the "lesson title" instead of the repetitive "resource title", resulting in more accurate and better-organized files (e.g., `Course Title[Lesson 1] - Resource.pdf`).
+  - The video quality flag (`-q`, `--video-quality`) now **only accepts numeric values** (e.g., `720`). Suffixes like `p` are no longer supported.
+- **Output Directory Structure & Filenames**:
+  - The resource title is no longer used as the final directory level, resulting in flatter and more direct save paths.
+  - For "High School" resources, the 'grade' level (e.g., "高一") is now automatically omitted from the directory path.
+  - The filename format for videos has been standardized to `... [720].ts`, removing the trailing `p`.
+  - The filename generation logic for `syncClassroom` resources has been corrected to use the "lesson title" for better organization.
 
 ### Added
 
-- **Comprehensive Test Suite**: Introduced an extensive suite of unit and integration tests covering all core logic:
-  - Unit tests for utility functions, token resolution, download negotiation, and directory building.
-  - Integration tests for all three extractor types (`Course`, `SyncClassroom`, `Textbook`) using a mock server.
-  - Integration tests for the HTTP client's network error handling, including rate limiting (`429` errors).
-- **Smart Rate Limiting Handling**: The HTTP client can now intelligently handle `HTTP 429 Too Many Requests` errors. It respects the `Retry-After` header from the server, pausing and retrying automatically.
+- **Smart Input Detection**: In interactive mode, the application now uses a single prompt that automatically detects whether the input is a URL or a resource ID.
+- **Advanced Configuration**: Users can now customize the directory naming scheme and key API parameters directly within `config.json`, making the application more resilient to future API changes.
+- **Comprehensive Test Suite**: Introduced an extensive suite of unit and integration tests covering all core logic using a mock server.
+- **Smart Rate Limiting Handling**: The HTTP client now intelligently handles `HTTP 429 Too Many Requests` errors by respecting the `Retry-After` header.
 
 ### Changed
 
-- **Improved Authentication Flow**: Implemented an "optimistic" authentication strategy. The application now attempts downloads first and only prompts for a token if the server returns an authentication error, allowing for seamless downloading of public resources.
-- **Enhanced Error Reporting**: Error messages are now more precise and context-aware. The application can distinguish between a **missing token** and an **invalid token**, providing clearer feedback in both non-interactive and interactive modes.
-- **Intuitive Interactive Menus**: All interactive selection menus (for video quality and audio format) now default to option `"1"`, allowing the user to simply press Enter to select the best/first option.
-- **Clarified Startup Messages**: The initial message about a missing token is now a neutral statement of fact, resolving logical inconsistencies with the program's behavior in different modes.
+- **Improved Batch Mode UI**: Progress reporting is now more concise and intuitive, summarizing filter operations with a clear chain (e.g., `(10 -> 5 available)`) and removing redundant messages.
+- **Consistent Error Reporting**: User input errors (e.g., "Resource not found") are now consistently displayed as yellow warnings (`[!]`) across all modes, distinguishing them from critical application errors.
+- **Improved Authentication Flow**: The application now attempts downloads first and only prompts for a token if an authentication error occurs.
+- **Enhanced Error Reporting**: Error messages now distinguish between a **missing token** and an **invalid token**.
+- **Intuitive Interactive Menus**: All interactive selection menus now default to the first option, allowing users to simply press Enter.
+- **Refined Final Summary**: Removed redundant "some downloads failed" messages in batch mode. Summary messages for failed tasks are now highlighted in yellow for better visibility.
+- Clarified startup messages regarding missing tokens.
 
 ### Fixed
 
 - **Extractor Robustness**:
-  - Corrected the `SyncClassroomExtractor` to handle multiple `res_ref` formats (JSONPath and plain index), fixing silent failures on certain courses.
-  - Corrected the `TextbookExtractor`'s PDF parsing to rely on the stable `ti_format` field instead of the unreliable `ti_file_flag`, preventing valid PDFs from being ignored.
-  - Fixed an issue in `CourseExtractor` where a generic filename like `textbook.pdf` was not being correctly identified and replaced by the book's title.
-- A bug causing inconsistent sorting of downloadable items between interactive and non-interactive modes.
-- A logic error in `select_stream_with_fallback` that could lead to multiple warnings being printed.
-- Overly strict M3U8 validation that could cause false negatives on successful downloads.
+  - Corrected the `SyncClassroomExtractor` to handle multiple `res_ref` formats (JSONPath and plain index).
+  - Corrected the `TextbookExtractor`'s PDF parsing to rely on the stable `ti_format` field.
+  - Fixed an issue in `CourseExtractor` where generic filenames were not correctly replaced by the book's title.
+- A bug causing inconsistent sorting of downloadable items between modes.
+- A logic error in `select_stream_with_fallback` that could lead to multiple warnings.
+- Overly strict M3U8 validation that could cause false negatives.
+
+### Refactor
+
+- **Centralized Configuration**: Moved hardcoded values (API keys, path components, internal strategies) into `config.json` and `constants.rs` for improved readability and easier maintenance.
+- **Eliminated Code Duplication**:
+  - Extracted shared logic for parsing API `res_ref` fields into a common utility function.
+  - Unified directory building logic for `Course` and `SyncClassroom` extractors via the `DirectoryBuilder` trait.
+- **Increased Robustness**: Replaced all remaining `.unwrap()` and `.expect()` calls in the core application logic with proper `Result` handling.
 
 ## [1.3.1] - 2025-10-13
 
