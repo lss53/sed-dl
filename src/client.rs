@@ -11,6 +11,7 @@ use reqwest_retry::{
 };
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
+use tokio::task::block_in_place;
 
 #[derive(Clone)]
 pub struct RobustClient {
@@ -116,7 +117,11 @@ impl RetryableStrategy for RateLimitingRetryStrategy {
                 .map(std::time::Duration::from_secs);
             let delay = retry_after.unwrap_or_else(|| std::time::Duration::from_secs(1));
             warn!("服务器速率限制，等待 {:?} 后重试...", delay);
-            std::thread::sleep(delay);
+            // 使用 block_in_place 包裹同步 sleep
+            block_in_place(|| {
+                std::thread::sleep(delay);
+            });
+            
             return Some(Retryable::Transient);
         }
         DefaultRetryableStrategy.handle(res)
