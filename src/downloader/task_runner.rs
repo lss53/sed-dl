@@ -3,7 +3,7 @@
 use super::task_processor::TaskProcessor;
 use crate::{DownloadJobContext, error::*, models::*, ui};
 use futures::{StreamExt, stream};
-use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
+use indicatif::{HumanBytes, ProgressBar};
 use log::error;
 use std::{
     cmp::min,
@@ -131,7 +131,6 @@ async fn run_single_concurrent_task(
 
 /// 根据任务列表信息，配置并返回一个合适的进度条。
 fn setup_progress_bar(tasks: &[FileInfo], max_workers: usize, all_sizes_available: bool) -> ProgressBar {
-    let pbar: ProgressBar;
     if all_sizes_available {
         let total_size: u64 = tasks.iter().filter_map(|t| t.ti_size).sum();
         ui::plain(""); // 产生空行
@@ -141,9 +140,9 @@ fn setup_progress_bar(tasks: &[FileInfo], max_workers: usize, all_sizes_availabl
             HumanBytes(total_size),
             max_workers
         ));
-        pbar = ProgressBar::new(total_size);
-        pbar.set_style(ProgressStyle::with_template("{prefix:4.cyan.bold}: [{elapsed_precise}] [{bar:40.green/white.dim}] {percent:>3}% | {bytes:>10}/{total_bytes:<10} | {bytes_per_sec:<10} | ETA: {eta_precise}").unwrap().progress_chars("━╸ "));
-        pbar.set_prefix("下载");
+        
+        ui::new_bytes_progress_bar(total_size, "下载")
+
     } else {
         ui::plain("");
         ui::warn("部分文件大小未知，将按文件数量显示进度。");
@@ -152,9 +151,6 @@ fn setup_progress_bar(tasks: &[FileInfo], max_workers: usize, all_sizes_availabl
             tasks.len(),
             max_workers
         ));
-        pbar = ProgressBar::new(tasks.len() as u64);
-        pbar.set_style(ProgressStyle::with_template("{prefix:4.yellow.bold}: [{elapsed_precise}] [{bar:40.yellow/white.dim}] {pos}/{len} ({percent}%) ETA: {eta}").unwrap().progress_chars("#>-"));
-        pbar.set_prefix("任务");
+        ui::new_tasks_progress_bar(tasks.len() as u64, "下载")
     }
-    pbar
 }

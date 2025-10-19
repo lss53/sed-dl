@@ -2,6 +2,7 @@
 
 use crate::{constants, error::AppResult, symbols};
 use colored::*;
+use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, Write};
 
 pub fn print_header(title: &str) {
@@ -47,6 +48,38 @@ pub fn error(message: &str) {
 /// 打印不带任何符号的普通文本
 pub fn plain(message: &str) {
     println!("{}", message);
+}
+
+/// 显示字节进度的进度条
+pub fn new_bytes_progress_bar(total_size: u64, prefix: &str) -> ProgressBar {
+    let pbar = ProgressBar::new(total_size);
+    pbar.set_style(
+        ProgressStyle::with_template(
+            "{prefix:4.cyan.bold}: [{elapsed_precise}] [{bar:40.green/white.dim}] \
+             {percent:>3}% | {bytes:>10}/{total_bytes:<10} | {bytes_per_sec:<10} | ETA: {eta_precise}"
+        )
+        .unwrap()
+        .progress_chars("━╸ "),
+    );
+    pbar.set_prefix(prefix.to_string());
+    pbar
+}
+
+/// 显示任务计数的进度条
+pub fn new_tasks_progress_bar(total_tasks: u64, prefix: &str) -> ProgressBar {
+    let pbar = ProgressBar::new(total_tasks);
+    pbar.set_style(
+        ProgressStyle::with_template(
+            "{prefix:4.yellow.bold}: [{elapsed_precise}] [{bar:40.yellow/white.dim}] \
+             {pos}/{len} ({percent}%) ETA: {eta}"
+        )
+        .unwrap()
+        .progress_chars("━╸ "),
+        // .progress_chars("#>-"),
+        
+    );
+    pbar.set_prefix(prefix.to_string());
+    pbar
 }
 
 pub fn prompt(message: &str, default: Option<&str>) -> io::Result<String> {

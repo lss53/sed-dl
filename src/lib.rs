@@ -23,7 +23,6 @@ use crate::{
 use anyhow::anyhow;
 use colored::*;
 use futures::{stream, StreamExt};
-use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, warn, info};
 use reqwest::StatusCode;
 use std::{
@@ -244,13 +243,7 @@ async fn process_batch_tasks(batch_file: &Path, base_context: DownloadJobContext
         ui::plain("");
     }
 
-    let pbar = ProgressBar::new(tasks.len() as u64);
-    pbar.set_style(
-        ProgressStyle::with_template("{prefix:10.cyan}: [{elapsed_precise}] [{bar:40.green/white.dim}] {pos}/{len} ({eta})")
-            .unwrap()
-            .progress_chars("━╸ "),
-    );
-    pbar.set_prefix("解析任务");
+    let pbar = ui::new_tasks_progress_bar(tasks.len() as u64, "解析");
 
     let mut stream = stream::iter(tasks.clone())
         .map(|task| {

@@ -105,13 +105,15 @@ fn setup_ctrl_c_handler() -> Arc<AtomicBool> {
         }
 
         if handler_token.load(Ordering::Relaxed) {
-            ui::plain("\n第二次中断，强制退出...");
+            ui::plain(""); // 产生空行
+            ui::plain("第二次中断，强制退出...");
             warn!("用户第二次按下 {}，强制退出。", *symbols::CTRL_C);
             std::process::exit(130);
         }
 
+        ui::plain("");
         ui::warn(&format!(
-            "\n正在停止... 请等待当前任务完成。再按一次 {} 可强制退出。",
+            "正在停止... 请等待当前任务完成。再按一次 {} 可强制退出。",
             *symbols::CTRL_C
         ));
         warn!("用户通过 {} 请求中断程序。", *symbols::CTRL_C);
