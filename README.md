@@ -51,7 +51,9 @@
 
 ### 方式一：下载预编译版本（推荐）
 
-访问 [GitHub Releases](https://github.com/lss53/sed-dl/releases) 页面，下载对应系统的可执行文件，解压后即可使用，无需配置额外环境。
+访问 [GitHub Releases](https://github.com/lss53/sed-dl/releases/latest) 页面，下载对应系统的可执行文件，解压后即可使用，无需配置额外环境。
+
+为了方便使用，建议将解压后的可执行文件（`sed-dl.exe` 或 `sed-dl`）所在的目录添加到系统的**环境变量 `PATH`** 中。这样，您就可以在任何终端窗口直接运行 `sed-dl` 命令。
 
 ### 方式二：从源码构建
 
@@ -68,84 +70,107 @@ cargo build --release
 # 编译结果位于 ./target/release/sed-dl
 ```
 
+## 🔑 核心概念：Access Token
+
+**什么是 Access Token？**
+它是一串特殊的文本，相当于您登录平台后的“临时通行证”。程序需要使用这个 Token 来向服务器证明“您”有权限下载这些资源。
+
+**如何获取？**
+本工具内置了详细的指南。只需在终端运行以下命令，即可查看获取 Token 的详细步骤：
+```bash
+sed-dl --token-help
+```
+**手动获取（备选）**
+
+使用 Chrome/Edge/Firefox 访问并登录 [国家中小学智慧教育平台](https://basic.smartedu.cn/tchMaterial)，打开任意一本教材后，按下图操作。
+
+![如何获取Token?](.github/assets/token_help.png)
+
+获取到的 Token 是一长串无规律的字母和数字。请妥善保管，不要泄露给他人。
+
+**Token 如何工作？**
+首次使用时，程序会提示您输入 Token。如果您选择保存，Token 会被安全地存储在本地配置文件中，后续无需再次输入。程序加载 Token 的优先级为：命令行 `--token` 参数 > `ACCESS_TOKEN` 环境变量 > 配置文件中的 Token。
+
 ## 🚀 使用指南
 
-### 1. 获取 Access Token
+`sed-dl` 主要通过以下几种模式工作，您可以根据需要选择最合适的一种。
 
-使用 `sed-dl` 前需获取有效的 `Access Token`，用于身份验证。
+### 模式一：交互模式 (🌟 强烈推荐)
 
-#### 获取方式：
+这是最简单、最灵活、最适合上手的模式。您可以在一个会话中逐一下载多个不同的资源。
 
-> **1. 登录平台**：使用 Chrome/Edge/Firefox 访问并登录 [国家中小学智慧教育平台](https://auth.smartedu.cn/uias/login)。
->
-> **2. 打开开发者工具**：
->    -   Windows/Linux：按 `F12` 或 `Ctrl+Shift+I`
->    -   macOS：按 `Cmd+Opt+I` (⌘⌥I)
->
-> **3. 进入“控制台” (Console)** 标签页。
->
-> **4. 粘贴并执行以下脚本**：
-> ```javascript
-> copy(JSON.parse(JSON.parse(localStorage.getItem(Object.keys(localStorage).find(i => i.startsWith("ND_UC_AUTH")))).value).access_token)
-> ```
-> **5. Token 将自动复制到剪贴板**，粘贴到工具中即可。程序会优先使用命令行传入的 `--token` 参数，其次是环境变量，最后才是自动保存的 Token。首次使用后，程序提示是否保存 Token，如果保存了，后续无需重复输入。程序加载 Token 的优先级为：命令行 `--token` 参数 > `ACCESS_TOKEN` 环境变量 > 配置文件中的 Token。
+-   **适用场景**：不确定要下载什么，想一个一个地尝试；或者需要下载来自不同课程的多个资源。
+-   **启动命令**：
+    ```bash
+    sed-dl -i
+    ```
+-   **使用流程**：
+    1.  程序启动后，会显示 `>>>` 提示符。
+    2.  将您从浏览器地址栏复制的**资源链接**或**资源ID**粘贴进去，然后按回车。
+    3.  程序会自动解析，并列出所有可下载的文件供您选择。
+    4.  根据提示输入您想下载的文件的编号（例如 `1,3,5-8` 或 `all`）。
+    5.  程序开始下载。下载完成后，会再次回到 `>>>` 提示符，等待您输入下一个链接。
+    6.  想结束时，直接按回车或 `Ctrl+C` 即可退出。
 
-#### 手动获取（备选）：
-
-![令牌截图](.github/assets/token.png)
-
-### 2. 使用示例
-
-#### 交互模式（推荐新手）
-
-使用 `-i` 或 `--interactive` 参数启动交互模式，输入链接或资源 ID 后程序会自动识别并处理。
-
-```bash
-sed-dl -i
-```
 ![交互模式截图](.github/assets/sed-dl-i.png)
 
-#### 下载单个资源
+### 模式二：单链接/ID 模式
 
-现在支持通过 `--url` 指定链接，或通过 `--id` 直接指定资源 ID。
+直接、快速地下载指定链接或 ID 中的所有内容。
 
-```bash
-# 方式一：通过 URL 下载（程序会自动提取 ID）
-sed-dl --url "https://.../classActivity?activityId=******"
+-   **适用场景**：目标明确，只想下载这一个页面的所有资源。
+-   **命令格式**：
+    -   **通过 URL 下载**：
+        ```bash
+        sed-dl --url "您要下载的资源的完整链接"
+        ```
+    -   **通过 ID 下载 (需要指定类型)**：
+        ```bash
+        sed-dl --id "资源的ID" --type <资源类型>
+        ```
+        *   `<资源类型>` 可选值: `tchMaterial` (教材), `qualityCourse` (精品课), `syncClassroom/classActivity` (同步课堂)。
 
-# 方式二：直接通过 ID 下载（需配合 --type）
-sed-dl --id "a1b2c3d4-....-e5f6g7h8i9j0" --type "syncClassroom/classActivity"
-```
+### 模式三：批量下载模式
 
-#### 批量下载
+从一个文本文件中读取多个链接或 ID，一次性全部下载。
 
-将多个链接或 ID 存入文本文件（如 `links.txt`），每行一个。
+-   **适用场景**：整理了一批需要下载的资源，希望程序能自动依次处理。
+-   **使用流程**：
+    1.  创建一个文本文件，例如 `links.txt`。
+    2.  将每个要下载的资源链接或 ID 单独放在一行。
+        ```
+        # links.txt 示例
+        https://.../classActivity?activityId=...
+        https://.../tchMaterial?contentId=...
+        a1b2c3d4-....-....-....-e5f6g7h8i9j0
+        ```
+    3.  运行以下命令：
+        ```bash
+        sed-dl -b links.txt --type <资源类型>
+        ```
+        *   **注意**：即使文件中全是 URL，也建议提供 `--type` 参数。**若文件中包含资源 ID，则必须使用 `--type`。**
 
-**示例 `links.txt` 文件：**
-```
-https://.../classActivity?activityId=...
-https://.../tchMaterial?contentId=...
-a1b2c3d4-....-....-....-e5f6g7h8i9j0
-```
+### ⚙️ 详细选项说明
 
-使用 `-b` 或 `--batch-file` 指定文件路径。**若文件中包含资源 ID，必须使用 `--type` 指定类型。**
+您可以根据所选的模式，附加不同的选项来精确控制下载行为。**请注意，部分选项仅在特定模式下生效。**
 
-```bash
-# 假设 links.txt 中的 ID 都是同步课堂类型
-sed-dl -b links.txt --type "syncClassroom/classActivity" -o "D:\课程资料"
-```
-可用 `--type` 选项包括：`tchMaterial`、`qualityCourse`、`syncClassroom/classActivity`。
-
-#### 查看完整帮助
-
-```bash
-sed-dl --help
-```
+| 选项 | 别名 | 描述和示例 |
+| :--- | :--- | :--- |
+| `--select <SELECTION>` | | **[非交互模式生效]** 直接指定下载项。此选项在 `--url`, `--id`, `-b` 模式下生效。支持 `all` 或 `1,3-5` 格式。默认值为 `all`。<br>**示例**: `sed-dl --url "..." --select "1-5,8"` |
+| `--filter-ext <EXTS>` | | **[所有模式生效]** **按扩展名过滤**，只下载指定类型的文件。多个类型用逗号分隔，不区分大小写。<br>**示例**: `sed-dl --url "..." --filter-ext pdf,mp3` |
+| `--video-quality <QUALITY>` | `-q` | **[非交互模式生效]** **选择视频清晰度**。可以是 `best` (最高)、`worst` (最低)，或具体的数值 (如 `720`)。在交互模式下，程序会提供一个交互式选择菜单。<br>**示例**: `sed-dl --url "..." --video-quality 720` |
+| `--audio-format <FORMAT>` | | **[非交互模式生效]** **[教材模式]** 选择音频格式。通常是 `mp3` 或 `m4a`。在交互模式下，程序会提供一个交互式选择菜单。<br>**示例**: `sed-dl --url "..." --audio-format m4a` |
+| `--force-redownload` | `-f` | **[所有模式生效]** **强制重新下载**。即使文件已存在且校验通过，也会强制覆盖下载。<br>**示例**: `sed-dl --url "..." -f` |
+| `--workers <NUMBER>` | `-w` | **[所有模式生效]** **设置并发下载数**。根据您的网络情况调整，默认为 5。<br>**示例**: `sed-dl -b links.txt -w 10` |
+| `--output <DIR>` | `-o` | **[所有模式生效]** **设置文件保存目录**。默认为程序运行目录下的 `downloads` 文件夹。<br>**示例**: `sed-dl -i -o "D:\学习资料"` |
+| `--flat` | | **[所有模式生效]** **平铺目录结构**。所有文件直接下载到输出目录，不创建额外的子目录（如年级、学科等）。<br>**示例**: `sed-dl --url "..." --flat` |
+| `--token <TOKEN>` | | **[所有模式生效]** **临时提供 Token**。通过此参数提供的 Token 优先级最高，但不会被保存。<br>**示例**: `sed-dl --url "..." --token "一长串token..."` |
+| `--help` | `-h` | **[所有模式生效]** 显示此帮助信息并退出。|
 
 ## ⚠️ 注意事项
 
 -   请合理使用本工具，尊重平台版权，下载资源仅限个人学习与研究。
--   `Access Token` 具有有效期，如遇 401/403 等认证错误，请重新获取。
+-   `Access Token` 具有有效期，如遇 401 等认证错误，请重新获取。
 -   本工具为开源项目，作者不对因使用本工具引发的任何问题负责。
 
 ## 🤝 参与贡献
