@@ -53,11 +53,11 @@ impl RobustClient {
             }
             StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => { // 403 and 404
                 warn!("请求 {} 返回 {}: 资源不存在。", res.url(), res.status());
-                Err(res.error_for_status().unwrap_err().into())
+                Err(AppError::Network(res.error_for_status().err().unwrap()))
             }
             s => { // 其他所有错误码
                 warn!("向 {} 的 HTTP 请求返回状态码: {}", res.url(), s);
-                Err(res.error_for_status().unwrap_err().into())
+                Err(AppError::Network(res.error_for_status().err().unwrap()))
             }
         }
     }
@@ -96,10 +96,7 @@ impl RobustClient {
             }
         }
         error!("所有服务器均请求失败 for template: {}", url_template);
-        match last_error {
-            Some(err) => Err(err),
-            None => Err(AppError::Other(anyhow!("所有服务器均请求失败"))),
-        }
+        Err(last_error.unwrap_or_else(|| AppError::Other(anyhow!("所有服务器均请求失败"))))
     }
 }
 
